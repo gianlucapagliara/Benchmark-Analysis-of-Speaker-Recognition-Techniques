@@ -89,8 +89,6 @@ def process_config(json_file):
     # setup logging in the project
     setup_logging(config.log_dir)
 
-    logging.getLogger().info("Hi, This is root.")
-    logging.getLogger().info("After the configurations are successfully processed and dirs are created.")
-    logging.getLogger().info("The pipeline of the project will begin now.")
+    logging.getLogger().info("Loading configuration and creating dirs.")
 
     return config
