@@ -138,10 +138,10 @@ class Trainer(BaseAgent):
             'optimizer': self.optimizer.state_dict(),
         }
         # Save the state
-        torch.save(state, self.config.checkpoint_dir + filename)
+        torch.save(state, self.config.checkpoint_dir + file_name)
         # If it is the best copy it to another file 'model_best.pth.tar'
         if is_best:
-            shutil.copyfile(self.config.checkpoint_dir + filename,
+            shutil.copyfile(self.config.checkpoint_dir + file_name,
                             self.config.checkpoint_dir + 'model_best.pth.tar')
 
     def run(self):
