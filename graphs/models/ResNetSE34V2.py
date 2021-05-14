@@ -3,13 +3,14 @@ import torchaudio
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
-from models.ResNetBlocks import *
+from graphs.models.ResNetBlocks import *
 
-class ResNetSE(nn.Module):
-    def __init__(self, block, layers, num_filters, nOut, encoder_type='SAP', n_mels=40, log_input=True, **kwargs):
-        super(ResNetSE, self).__init__()
+class ResNetSE34V2(nn.Module):
+    def __init__(self, device, block=SEBasicBlock, layers=[3, 4, 6, 3], num_filters=[32, 64, 128, 256], nOut=256, encoder_type='SAP', n_mels=40, log_input=True, **kwargs):
+        super(ResNetSE34L, self).__init__()
 
-        print('Embedding size is %d, encoder %s.'%(nOut, encoder_type))
+        self.device = device
+        self.to(self.device)
         
         self.inplanes   = num_filters[0]
         self.encoder_type = encoder_type
@@ -112,11 +113,3 @@ class ResNetSE(nn.Module):
         x = self.fc(x)
 
         return x
-
-
-def MainModel(nOut=256, **kwargs):
-    # Number of filters
-    num_filters = [32, 64, 128, 256]
-    model = ResNetSE(SEBasicBlock, [3, 4, 6, 3], num_filters, nOut, **kwargs)
-    return model
-

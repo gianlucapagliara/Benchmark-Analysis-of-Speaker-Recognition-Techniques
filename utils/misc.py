@@ -1,6 +1,8 @@
 import time
 import logging
-
+import sys
+from subprocess import call
+import torch
 
 def timeit(f):
     """ Decorator to time Any Function """
@@ -19,9 +21,6 @@ def timeit(f):
 
 def print_cuda_statistics():
     logger = logging.getLogger("Cuda Statistics")
-    import sys
-    from subprocess import call
-    import torch
     logger.info('__Python VERSION:  {}'.format(sys.version))
     logger.info('__pyTorch VERSION:  {}'.format(torch.__version__))
     logger.info('__CUDA VERSION')
@@ -34,3 +33,7 @@ def print_cuda_statistics():
     logger.info('Active CUDA Device: GPU {}'.format(torch.cuda.current_device()))
     logger.info('Available devices  {}'.format(torch.cuda.device_count()))
     logger.info('Current cuda device  {}'.format(torch.cuda.current_device()))
+
+
+def round_down(num, divisor):
+    return num - (num % divisor)

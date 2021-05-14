@@ -51,7 +51,8 @@ def get_config_from_json(json_file):
             config = EasyDict(config_dict)
             return config, config_dict
         except ValueError:
-            print("INVALID JSON file format! Please provide a good json file.")
+            logging.getLogger().warning(
+                "INVALID JSON file format! Please provide a good json file.")
             exit(-1)
 
 
@@ -67,19 +68,9 @@ def process_config(json_file):
     :return: config object(namespace)
     """
     config, _ = get_config_from_json(json_file)
-    print(" The Configuration of your experiment: ")
-    pprint(config)
 
-    # making sure that you have provided the exp_name.
-    try:
-        print("***************************************")
-        print("The experiment name is {}.".format(config.exp_name))
-        print("***************************************")
-    except AttributeError:
-        print("ERROR! Please provide the exp_name in json file.")
-        exit(-1)
-
-    # create some important directories to be used for that experiment.
+    # create some important directories to be used for the experiment.
+    logging.getLogger().info("Loading configuration and creating dirs.")
     config.summary_dir = os.path.join("experiments", config.exp_name, "summaries/")
     config.checkpoint_dir = os.path.join("experiments", config.exp_name, "checkpoints/")
     config.out_dir = os.path.join("experiments", config.exp_name, "out/")
@@ -89,6 +80,15 @@ def process_config(json_file):
     # setup logging in the project
     setup_logging(config.log_dir)
 
-    logging.getLogger().info("Loading configuration and creating dirs.")
+    # making sure that the exp_name is provided.
+    try:
+        logging.getLogger().info("Experiment: {}.".format(config.exp_name))
+    except AttributeError:
+        logging.getLogger().warning("ERROR! Please provide the exp_name in json file.")
+        exit(-1)
+    
+    if(config.verbose):
+        logging.getLogger().info(" The Configuration of the experiment: ")
+        logging.getLogger().info(config)
 
     return config

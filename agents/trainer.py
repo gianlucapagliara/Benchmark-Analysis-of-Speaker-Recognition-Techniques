@@ -1,7 +1,6 @@
 import sys
 import time
 import importlib
-import tqdm
 import numpy as np
 import random
 
@@ -14,10 +13,11 @@ from tensorboardX import SummaryWriter
 from agents.base import BaseAgent
 from graphs.models.SpeakerNet import SpeakerNet
 from utils.misc import print_cuda_statistics
+from utils.metrics import AverageMeter
+from datasets.Sampler import Sampler
 
-import torchaudio
-
-torchaudio.set_audio_backend("soundfile")
+from tqdm import tqdm
+import shutil
 
 
 class Trainer(BaseAgent):
@@ -39,18 +39,18 @@ class Trainer(BaseAgent):
             self.logger.info("Operation will be on ***** CPU ***** ")
         self.gpu = config.gpu_device
 
-
         # Datasets
         self.to_train = config.train
         if self.to_train:
             TrainDataset = importlib.import_module(
                 'datasets.' + config.train_dataset).__getattribute__(config.train_dataset)
             self.train_dataset = TrainDataset(**vars(config))
+            self.sampler = Sampler(self.train_dataset, **vars(config)) if self.config.sampler else None
             self.train_loader = torch.utils.data.DataLoader(
                 self.train_dataset,
                 batch_size=config.batch_size,
                 num_workers=config.nDataLoaderThread,
-                #sampler=train_sampler,
+                sampler=self.sampler,
                 pin_memory=False,
                 #worker_init_fn=worker_init_fn,
                 drop_last=True,
@@ -73,12 +73,17 @@ class Trainer(BaseAgent):
         LossFunction = importlib.import_module(
             'graphs.losses.'+config.loss_function).__getattribute__('LossFunction')
         self.__loss__ = LossFunction(**vars(config))
+        self.__loss__ = self.__loss__.to(self.device)
 
         # Model
         Model = importlib.import_module(
             'graphs.models.' + config.model).__getattribute__(config.model)
         self.__model__ = SpeakerNet(
-            Model(**vars(config)), self.__loss__, config.nPerSpeaker)
+            Model(self.device, **vars(config)), self.__loss__, config.nPerSpeaker)
+        self.__model__ = self.__model__.to(self.device)
+
+        # Model Loading (if not found start from scratch)
+        self.load_checkpoint(self.config.initial_model)
 
         # Optimizer
         Optimizer = importlib.import_module(
@@ -99,50 +104,47 @@ class Trainer(BaseAgent):
         # Tensorboard Writer
         self.summary_writer = SummaryWriter(log_dir=self.config.summary_dir)
 
+        # Counters initialization
+        self.current_epoch = 0
+        self.current_iteration = 0
+        self.best_valid_acc = 0
+
         # Others
         self.verbose = config.verbose
         self.mixedprec = config.mixedprec
 
-    def load_checkpoint(self, file_name):
-        """
-        Latest checkpoint loader
-        :param file_name: name of the checkpoint file
-        :return:
-        """
-        self_state = self.__model__.module.state_dict()
-        path = self.config.checkpoint_dir + file_name
-        loaded_state = torch.load(path, map_location="cuda:%d" % self.gpu)
-        for name, param in loaded_state.items():
-            origname = name
-            if name not in self_state:
-                name = name.replace("module.", "")
+    def load_checkpoint(self, filename):
+        filename = self.config.checkpoint_dir + filename
+        try:
+            self.logger.info("Loading checkpoint '{}'".format(filename))
+            checkpoint = torch.load(filename)
 
-                if name not in self_state:
-                    print("{} is not in the model.".format(origname))
-                    continue
+            self.current_epoch = checkpoint['epoch']
+            self.current_iteration = checkpoint['iteration']
+            self.model.load_state_dict(checkpoint['state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
 
-            if self_state[name].size() != loaded_state[origname].size():
-                print("Wrong parameter length: {}, model: {}, loaded: {}".format(
-                    origname, self_state[name].size(), loaded_state[origname].size()))
-                continue
-
-            self_state[name].copy_(param)
+            self.logger.info("Checkpoint loaded successfully from '{}' at (epoch {}) at (iteration {})\n"
+                             .format(self.config.checkpoint_dir, checkpoint['epoch'], checkpoint['iteration']))
+        except OSError as e:
+            self.logger.info("No checkpoint exists from '{}'. Skipping...".format(
+                self.config.checkpoint_dir))
 
     def save_checkpoint(self, file_name="checkpoint.pth.tar", is_best=0):
-        """
-        Checkpoint saver
-        :param file_name: name of the checkpoint file
-        :param is_best: boolean flag to indicate whether current checkpoint's metric is the best so far
-        :return:
-        """
-        path = self.config.checkpoint_dir + file_name
-        torch.save(self.__model__.module.state_dict(), path)
+        state = {
+            'epoch': self.current_epoch,
+            'iteration': self.current_iteration,
+            'state_dict': self.model.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+        }
+        # Save the state
+        torch.save(state, self.config.checkpoint_dir + filename)
+        # If it is the best copy it to another file 'model_best.pth.tar'
+        if is_best:
+            shutil.copyfile(self.config.checkpoint_dir + filename,
+                            self.config.checkpoint_dir + 'model_best.pth.tar')
 
     def run(self):
-        """
-        The main operator
-        :return:
-        """
         try:
             if self.to_train:
                 self.train()
@@ -153,79 +155,77 @@ class Trainer(BaseAgent):
             self.logger.info("You have entered CTRL+C... Wait to finalize.")
 
     def train(self):
-        """
-        Main training loop
-        :return:
-        """
+        for epoch in range(self.current_epoch, self.config.max_epoch):
+            self.current_epoch = epoch
+            self.train_one_epoch()
+
+            valid_acc = self.validate()
+            is_best = valid_acc > self.best_valid_acc
+            if is_best:
+                self.best_valid_acc = valid_acc
+            self.save_checkpoint(is_best=is_best)
+
+    def train_one_epoch(self):
         # Set the model to be in training mode
         self.__model__.train()
 
-        stepsize = self.train_loader.batch_size
+        current_batch = 0
 
-        counter = 0
-        index = 0
-        loss = 0
-        top1 = 0    # EER or accuracy
+        # Initialize your average meters
+        epoch_loss = AverageMeter()
+        epoch_top1 = AverageMeter()  # EER or accuracy
 
-        tstart = time.time()
+        # Initialize tqdm
+        tqdm_batch = tqdm(self.train_loader, total=len(self.train_loader),
+                          desc="Epoch-{}".format(self.current_epoch+1))
 
-        for data, data_label in self.train_loader:
+        for x, y in tqdm_batch:
 
-            data = data.transpose(1, 0)
+            x = x.transpose(1, 0)
+            y = torch.LongTensor(y).to(self.device)
 
             self.__model__.zero_grad()
 
-            label = torch.LongTensor(data_label).cuda()
-
             if self.mixedprec:
                 with autocast():
-                    nloss, prec1 = self.__model__(data, label)
-                self.scaler.scale(nloss).backward()
+                    cur_loss, curr_top1 = self.__model__(x, y)
+                self.scaler.scale(cur_loss).backward()
                 self.scaler.step(self.__optimizer__)
                 self.scaler.update()
             else:
-                nloss, prec1 = self.__model__(data, label)
-                nloss.backward()
+                cur_loss, curr_top1 = self.__model__(x, y)
+                cur_loss.backward()
                 self.__optimizer__.step()
-
-            loss += nloss.detach().cpu().item()
-            top1 += prec1.detach().cpu().item()
-            counter += 1
-            index += stepsize
-
-            telapsed = time.time() - tstart
-            tstart = time.time()
-
-            if self.verbose:
-                sys.stdout.write("\rProcessing ({:d}) ".format(index))
-                sys.stdout.write("Loss {:f} TEER/TAcc {:2.3f}% - {:.2f} Hz ".format(
-                    loss/counter, top1/counter, stepsize/telapsed))
-                sys.stdout.flush()
 
             if self.lr_step == 'iteration':
                 self.__scheduler__.step()
 
+            # Meters update
+            epoch_loss.update(cur_loss.item())
+            epoch_top1.update(curr_top1.item(), x.size(0))
+
+            self.current_iteration += 1
+            current_batch += 1
+
+            # Logging
+            tqdm_batch.set_description("Epoch-{} | Loss {:f} TEER/TAcc {:2.3f}%  ".format(
+                self.current_epoch+1, epoch_loss.val, epoch_top1.val), refresh=True)
+
+            self.summary_writer.add_scalar(
+                "epoch/loss", epoch_loss.val, self.current_iteration)
+            self.summary_writer.add_scalar(
+                "epoch/accuracy", epoch_top1.val, self.current_iteration)
+
         if self.lr_step == 'epoch':
             self.__scheduler__.step()
 
-        return (loss/counter, top1/counter)
+        tqdm_batch.close()
+        self.logger.info("Training at epoch-{} completed. | Loss {:f} TEER/TAcc {:2.3f}%  ".format(
+            self.current_epoch+1, epoch_loss.val, epoch_top1.val))
 
-    def train_one_epoch(self):
-        """
-        One epoch of training
-        :return:
-        """
-        # Initialize tqdm
-        tqdm_batch = tqdm(self.train_loader, total=len(self.train_loader),
-                          desc="Epoch-{}-".format(self.current_epoch))
-
-        pass
+        return (epoch_loss.val, epoch_top1.val)
 
     def validate(self):
-        """
-        Model validation
-        :return:
-        """
         self.__model__.eval()
 
         lines = []
@@ -284,10 +284,6 @@ class Trainer(BaseAgent):
         return (all_scores, all_labels, all_trials)
 
     def finalize(self):
-        """
-        Finalizes all the operations of the 2 Main classes of the process, the operator and the data loader
-        :return:
-        """
         self.logger.info("Finalizing the operation...")
         self.save_checkpoint()
         self.summary_writer.export_scalars_to_json(
