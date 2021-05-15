@@ -9,11 +9,13 @@ import time, pdb, numpy
 from utils.metrics import accuracy
 
 class LossFunction(nn.Module):
-    def __init__(self, nOut, nClasses, margin=0.3, scale=15, **kwargs):
+    def __init__(self, device, nOut, nClasses, margin=0.3, scale=15, **kwargs):
         super(LossFunction, self).__init__()
 
         self.test_normalize = True
         
+        self.device = device
+
         self.m = margin
         self.s = scale
         self.in_feats = nOut
@@ -34,7 +36,7 @@ class LossFunction(nn.Module):
         label_view = label.view(-1, 1)
         if label_view.is_cuda: label_view = label_view.cpu()
         delt_costh = torch.zeros(costh.size()).scatter_(1, label_view, self.m)
-        if x.is_cuda: delt_costh = delt_costh.cuda()
+        if x.is_cuda: delt_costh = delt_costh.to(self.device)
         costh_m = costh - delt_costh
         costh_m_s = self.s * costh_m
         loss    = self.ce(costh_m_s, label)

@@ -38,6 +38,7 @@ class Trainer(BaseAgent):
             torch.manual_seed(self.config.seed)
             self.logger.info("Operation will be on ***** CPU ***** ")
         self.gpu = config.gpu_device
+        self.config.device = self.device
 
         # Datasets
         self.to_train = config.train
@@ -79,7 +80,7 @@ class Trainer(BaseAgent):
         Model = importlib.import_module(
             'graphs.models.' + config.model).__getattribute__(config.model)
         self.__model__ = SpeakerNet(
-            Model(self.device, **vars(config)), self.__loss__, config.nPerSpeaker)
+            Model(**vars(config)), self.__loss__, self.device, config.nPerSpeaker)
         self.__model__ = self.__model__.to(self.device)
 
         # Model Loading (if not found start from scratch)
@@ -157,7 +158,9 @@ class Trainer(BaseAgent):
     def train(self):
         for epoch in range(self.current_epoch, self.config.max_epoch):
             self.current_epoch = epoch
-            self.train_one_epoch()
+            self.sampler.set_epoch(epoch)
+
+            loss, acc = self.train_one_epoch()
 
             valid_acc = self.validate()
             is_best = valid_acc > self.best_valid_acc
@@ -235,7 +238,7 @@ class Trainer(BaseAgent):
 
         # Extract features for every image
         for idx, data in enumerate(self.test_loader):
-            inp1 = data[0][0].cuda()
+            inp1 = data[0][0].to(self.device)
             ref_feat = self.__model__(inp1).detach().cpu()
             feats[data[1][0]] = ref_feat
             telapsed = time.time() - tstart
@@ -259,8 +262,8 @@ class Trainer(BaseAgent):
             if len(data) == 2:
                 data = [random.randint(0, 1)] + data
 
-            ref_feat = feats[data[1]].cuda()
-            com_feat = feats[data[2]].cuda()
+            ref_feat = feats[data[1]].to(self.device)
+            com_feat = feats[data[2]].to(self.device)
 
             if self.__model__.module.__L__.test_normalize:
                 ref_feat = F.normalize(ref_feat, p=2, dim=1)

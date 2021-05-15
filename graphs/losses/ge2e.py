@@ -11,11 +11,13 @@ from utils.metrics import accuracy
 
 class LossFunction(nn.Module):
 
-    def __init__(self, init_w=10.0, init_b=-5.0, **kwargs):
+    def __init__(self, device, init_w=10.0, init_b=-5.0, **kwargs):
         super(LossFunction, self).__init__()
 
         self.test_normalize = True
         
+        self.device = device
+
         self.w = nn.Parameter(torch.tensor(init_w))
         self.b = nn.Parameter(torch.tensor(init_b))
         self.criterion  = torch.nn.CrossEntropyLoss()
@@ -44,8 +46,9 @@ class LossFunction(nn.Module):
         torch.clamp(self.w, 1e-6)
         cos_sim_matrix = cos_sim_matrix * self.w + self.b
         
-        label = torch.from_numpy(numpy.asarray(range(0,stepsize))).cuda()
-        nloss = self.criterion(cos_sim_matrix.view(-1,stepsize), torch.repeat_interleave(label,repeats=gsize,dim=0).cuda())
+        label = torch.from_numpy(numpy.asarray(range(0,stepsize))).to(self.device)
+        nloss = self.criterion(cos_sim_matrix.view(-1, stepsize),
+                               torch.repeat_interleave(label, repeats=gsize, dim=0).to(self.device))
         prec1 = accuracy(cos_sim_matrix.view(-1,stepsize).detach(), torch.repeat_interleave(label,repeats=gsize,dim=0).detach(), topk=(1,))[0]
 
         return nloss, prec1
