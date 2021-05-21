@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from utils.audio import loadWAV
 
 class VoxCeleb2(Dataset):
-    def __init__(self, train_list, train_path, max_frames, **kwargs):
+    def __init__(self, train_list, train_path, max_frames, max_files=0, **kwargs):
         self.train_list = train_list
         self.max_frames = max_frames
 
@@ -33,6 +33,10 @@ class VoxCeleb2(Dataset):
             self.data_label.append(speaker_label)
             self.data_list.append(filename)
 
+        if max_files > 0:
+            self.data_label = self.data_label[:max_files]
+            self.data_list = self.data_list[:max_files]
+
     def __len__(self):
         return len(self.data_list)
 
@@ -44,10 +48,10 @@ class VoxCeleb2(Dataset):
                 audio = loadWAV(self.data_list[index], self.max_frames, evalmode=False)
                 feat.append(audio)
         else:
-            index = indices
-            audio = loadWAV(self.data_list[index],
-                            self.max_frames, evalmode=False)
-            feat.append(audio)
+           index = indices
+           audio = loadWAV(self.data_list[index],
+                           self.max_frames, evalmode=False)
+           feat.append(audio)
         
         feat = np.concatenate(feat, axis=0)
 

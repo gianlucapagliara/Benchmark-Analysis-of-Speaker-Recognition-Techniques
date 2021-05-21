@@ -1,5 +1,5 @@
 {
-    "exp_name": "VGGVox",
+    "exp_name": "ResNetSE34L",
     "agent": "",
     "verbose": false,
     "seed": 1337,
@@ -7,11 +7,11 @@
     "cuda": true,
     "gpu_device": 0,
     
-    "model": "VGGVox",
+    "model": "ResNetSE34L",
     "initial_model": "",
     "n_mels": 40,
     "encoder_type": "SAP",
-    "nOut": 512,
+    "nOut": 256,
     "checkpoint_dir": "",
     "summary_dir": "",
     
@@ -20,7 +20,7 @@
     "hard_rank": 10,
     "margin": 0.1,
     "scale": 30,
-    "nPerSpeaker": 2,
+    "nPerSpeaker": 1,
     "nClasses":5994,
     
     "optimizer": "adam",
@@ -36,10 +36,10 @@
     "train_path": "data/voxceleb2/",
     "max_frames": 200,
     "max_epoch": 500,
-    "batch_size": 400,
-    "nDataLoaderThread": 5,
+    "batch_size": 200,
+    "nDataLoaderThread": 1,
     "max_seg_per_spk": 500,
-    "sampler": false,
+    "sampler": true,
 
     
     "test": false,

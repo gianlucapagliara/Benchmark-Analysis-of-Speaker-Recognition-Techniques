@@ -1,5 +1,6 @@
 import sys
 import time
+import datetime
 import importlib
 import numpy as np
 import random
@@ -16,6 +17,7 @@ from utils.misc import print_cuda_statistics
 from utils.metrics import AverageMeter
 from datasets.Sampler import Sampler
 
+import tqdm as t
 from tqdm import tqdm
 import shutil
 
@@ -46,14 +48,15 @@ class Trainer(BaseAgent):
             TrainDataset = importlib.import_module(
                 'datasets.' + config.train_dataset).__getattribute__(config.train_dataset)
             self.train_dataset = TrainDataset(**vars(config))
-            self.sampler = Sampler(self.train_dataset, **vars(config)) if self.config.sampler else None
+            self.sampler = Sampler(
+                self.train_dataset, **vars(config)) if self.config.sampler else None
             self.train_loader = torch.utils.data.DataLoader(
                 self.train_dataset,
                 batch_size=config.batch_size,
                 num_workers=config.nDataLoaderThread,
                 sampler=self.sampler,
                 pin_memory=False,
-                #worker_init_fn=worker_init_fn,
+                # worker_init_fn=worker_init_fn,
                 drop_last=True,
             )
 
@@ -158,7 +161,8 @@ class Trainer(BaseAgent):
     def train(self):
         for epoch in range(self.current_epoch, self.config.max_epoch):
             self.current_epoch = epoch
-            self.sampler.set_epoch(epoch)
+            if self.config.sampler:
+                self.sampler.set_epoch(epoch)
 
             loss, acc = self.train_one_epoch()
 
@@ -172,20 +176,26 @@ class Trainer(BaseAgent):
         # Set the model to be in training mode
         self.__model__.train()
 
-        current_batch = 0
-
         # Initialize your average meters
         epoch_loss = AverageMeter()
         epoch_top1 = AverageMeter()  # EER or accuracy
 
         # Initialize tqdm
-        tqdm_batch = tqdm(self.train_loader, total=len(self.train_loader),
-                          desc="Epoch-{}".format(self.current_epoch+1))
+        #t.tqdm.monitor_interval = 0
+        #tqdm_batch = tqdm(self.train_loader, total=len(self.train_loader),desc="Epoch {}".format(self.current_epoch+1))
 
-        for x, y in tqdm_batch:
+        start_time = time.time()
+
+        total_iterations = len(self.train_loader)
+        # for x, y in tqdm_batch:
+        for x, y in self.train_loader:
+            loop_time = time.time()-start_time
 
             x = x.transpose(1, 0)
             y = torch.LongTensor(y).to(self.device)
+
+            #prepare_time = time.time()-start_time
+            prepare_time = time.time()-start_time-loop_time
 
             self.__model__.zero_grad()
 
@@ -208,21 +218,32 @@ class Trainer(BaseAgent):
             epoch_top1.update(curr_top1.item(), x.size(0))
 
             self.current_iteration += 1
-            current_batch += 1
-
-            # Logging
-            tqdm_batch.set_description("Epoch-{} | Loss {:f} TEER/TAcc {:2.3f}%  ".format(
-                self.current_epoch+1, epoch_loss.val, epoch_top1.val), refresh=True)
 
             self.summary_writer.add_scalar(
                 "epoch/loss", epoch_loss.val, self.current_iteration)
             self.summary_writer.add_scalar(
                 "epoch/accuracy", epoch_top1.val, self.current_iteration)
+            # Logging
+            process_time = time.time()-start_time-prepare_time-loop_time
+            total = process_time+prepare_time+loop_time
+            perc_loop = loop_time/total*100
+            perc_proc = process_time/total*100
+            perc_prep = prepare_time/total*100
+            #tqdm_batch.set_description("Epoch {} | Loss {:f} TEER/TAcc {:2.3f}% | Comput. Eff.: {:.2f}% ".format(self.current_epoch+1, epoch_loss.val, epoch_top1.val, efficiency), refresh=True)
+            #tqdm_batch.set_description("Epoch {} | Loss {:f} TEER/TAcc {:2.3f}% | Loop: {:.2f}% - Preparation: {:.2f}% - Process: {:.2f}% ".format(self.current_epoch+1, epoch_loss.val, epoch_top1.val, perc_loop, perc_prep, perc_proc), refresh=True)
+
+            sys.stdout.write("\rEpoch-{} ({}/{}) | Loss {:f} TEER/TAcc {:2.3f}% | Time remaining: {} | Loop: {:.2f}% - Preparation: {:.2f}% - Process: {:.2f}%"
+                             .format(self.current_epoch+1, self.current_iteration, total_iterations, epoch_loss.val, epoch_top1.val,
+                                     str(datetime.timedelta(seconds=total *
+                                                            (total_iterations-self.current_iteration))),
+                                     perc_loop, perc_prep, perc_proc))
+            sys.stdout.flush()
+            start_time = time.time()
 
         if self.lr_step == 'epoch':
             self.__scheduler__.step()
 
-        tqdm_batch.close()
+        # tqdm_batch.close()
         self.logger.info("Training at epoch-{} completed. | Loss {:f} TEER/TAcc {:2.3f}%  ".format(
             self.current_epoch+1, epoch_loss.val, epoch_top1.val))
 

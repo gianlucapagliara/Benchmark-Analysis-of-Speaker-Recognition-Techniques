@@ -8,7 +8,7 @@ from utils.audio import loadWAV
 
 
 class VoxCeleb1(Dataset):
-    def __init__(self, test_list, test_path, eval_frames, num_eval, **kwargs):
+    def __init__(self, test_list, test_path, eval_frames, num_eval, max_files=0, **kwargs):
         self.max_frames = eval_frames
         self.num_eval = num_eval
         self.test_path = test_path
@@ -22,6 +22,9 @@ class VoxCeleb1(Dataset):
         files = sum([x.strip().split()[-2:] for x in lines], [])
         self.data_list = list(set(files))
         self.data_list.sort()
+
+        if max_files > 0:
+            self.data_list = self.data_list[:max_files]
 
     def __len__(self):
         return len(self.data_list)

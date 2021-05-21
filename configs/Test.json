@@ -36,13 +36,14 @@
     "train_path": "data/voxceleb2/",
     "max_frames": 200,
     "max_epoch": 500,
-    "batch_size": 400,
+    "batch_size": 4,
+    "max_files": 8,
     "nDataLoaderThread": 5,
     "max_seg_per_spk": 500,
     "sampler": false,
 
     
-    "test": false,
+    "test": true,
     "test_dataset": "VoxCeleb1",
     "test_list": "data/test_list.txt",
     "test_path": "data/voxceleb1/",
