@@ -71,6 +71,7 @@ class Trainer(BaseAgent):
                 shuffle=False,
                 num_workers=config.nDataLoaderThread,
                 drop_last=False,
+                #sampler=self.test_sampler
             )
 
         # Loss
@@ -125,8 +126,8 @@ class Trainer(BaseAgent):
 
             self.current_epoch = checkpoint['epoch']
             self.current_iteration = checkpoint['iteration']
-            self.model.load_state_dict(checkpoint['state_dict'])
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
+            self.__model__.load_state_dict(checkpoint['state_dict'])
+            self.__optimizer__.load_state_dict(checkpoint['optimizer'])
 
             self.logger.info("Checkpoint loaded successfully from '{}' at (epoch {}) at (iteration {})\n"
                              .format(self.config.checkpoint_dir, checkpoint['epoch'], checkpoint['iteration']))
@@ -138,8 +139,8 @@ class Trainer(BaseAgent):
         state = {
             'epoch': self.current_epoch,
             'iteration': self.current_iteration,
-            'state_dict': self.model.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
+            'state_dict': self.__model__.state_dict(),
+            'optimizer': self.__optimizer__.state_dict(),
         }
         # Save the state
         torch.save(state, self.config.checkpoint_dir + file_name)
@@ -166,7 +167,9 @@ class Trainer(BaseAgent):
 
             loss, acc = self.train_one_epoch()
 
-            valid_acc = self.validate()
+            scores, labels, trials = self.validate()
+
+            valid_acc = 1
             is_best = valid_acc > self.best_valid_acc
             if is_best:
                 self.best_valid_acc = valid_acc
@@ -184,9 +187,10 @@ class Trainer(BaseAgent):
         #t.tqdm.monitor_interval = 0
         #tqdm_batch = tqdm(self.train_loader, total=len(self.train_loader),desc="Epoch {}".format(self.current_epoch+1))
 
+        self.current_iteration = 0
+        total_iterations = len(self.train_loader)
         start_time = time.time()
 
-        total_iterations = len(self.train_loader)
         # for x, y in tqdm_batch:
         for x, y in self.train_loader:
             loop_time = time.time()-start_time
@@ -223,8 +227,9 @@ class Trainer(BaseAgent):
                 "epoch/loss", epoch_loss.val, self.current_iteration)
             self.summary_writer.add_scalar(
                 "epoch/accuracy", epoch_top1.val, self.current_iteration)
-            # Logging
             process_time = time.time()-start_time-prepare_time-loop_time
+            
+            # Logging
             total = process_time+prepare_time+loop_time
             perc_loop = loop_time/total*100
             perc_proc = process_time/total*100
@@ -232,7 +237,7 @@ class Trainer(BaseAgent):
             #tqdm_batch.set_description("Epoch {} | Loss {:f} TEER/TAcc {:2.3f}% | Comput. Eff.: {:.2f}% ".format(self.current_epoch+1, epoch_loss.val, epoch_top1.val, efficiency), refresh=True)
             #tqdm_batch.set_description("Epoch {} | Loss {:f} TEER/TAcc {:2.3f}% | Loop: {:.2f}% - Preparation: {:.2f}% - Process: {:.2f}% ".format(self.current_epoch+1, epoch_loss.val, epoch_top1.val, perc_loop, perc_prep, perc_proc), refresh=True)
 
-            sys.stdout.write("\rEpoch-{} ({}/{}) | Loss {:f} TEER/TAcc {:2.3f}% | Time remaining: {} | Loop: {:.2f}% - Preparation: {:.2f}% - Process: {:.2f}%"
+            sys.stdout.write("\rEpoch-{} ({}/{}) | Loss {:f} TEER/TAcc {:2.3f}% | Time remaining: {} | Loop: {:.2f}% - Preparation: {:.2f}% - Process: {:.2f}%\n"
                              .format(self.current_epoch+1, self.current_iteration, total_iterations, epoch_loss.val, epoch_top1.val,
                                      str(datetime.timedelta(seconds=total *
                                                             (total_iterations-self.current_iteration))),
@@ -252,39 +257,19 @@ class Trainer(BaseAgent):
     def validate(self):
         self.__model__.eval()
 
-        lines = []
-        files = []
-        feats = {}
-        tstart = time.time()
+        score = AverageMeter()
 
-        # Extract features for every image
-        for idx, data in enumerate(self.test_loader):
-            inp1 = data[0][0].to(self.device)
-            ref_feat = self.__model__(inp1).detach().cpu()
-            feats[data[1][0]] = ref_feat
-            telapsed = time.time() - tstart
+        total_iterations = len(self.test_loader)
+        current_iteration = 0
+        start_time = time.time()
+        for ref, com, label in self.test_loader:
+            loop_time = time.time()-start_time
 
-            if idx % self.config.print_interval == 0:
-                sys.stdout.write("\rReading {:d} of {:d}: {:.2f} Hz, embedding size {:d}".format(
-                    idx, len(self.test_dataset), idx/telapsed, ref_feat.size()[1]))
-
-        print('')
-        all_scores = []
-        all_labels = []
-        all_trials = []
-        tstart = time.time()
-
-        # Read files and compute all scores
-        for idx, line in enumerate(lines):
-
-            data = line.split()
-
-            # Append random label if missing
-            if len(data) == 2:
-                data = [random.randint(0, 1)] + data
-
-            ref_feat = feats[data[1]].to(self.device)
-            com_feat = feats[data[2]].to(self.device)
+            with torch.no_grad():
+                ref_feat = self.__model__(ref).to(self.device)
+                com_feat = self.__model__(com).to(self.device)
+            
+            prepare_time = time.time()-start_time-loop_time
 
             if self.__model__.module.__L__.test_normalize:
                 ref_feat = F.normalize(ref_feat, p=2, dim=1)
@@ -294,18 +279,23 @@ class Trainer(BaseAgent):
                 ref_feat.unsqueeze(-1), com_feat.unsqueeze(-1).transpose(0, 2)).detach().cpu().numpy()
 
             score = -1 * np.mean(dist)
+            score.update(score)
 
-            all_scores.append(score)
-            all_labels.append(int(data[0]))
-            all_trials.append(data[1]+" "+data[2])
+            process_time = time.time()-start_time-prepare_time-loop_time
+            
+            # Logging
+            total = process_time+prepare_time+loop_time
+            perc_loop = loop_time/total*100
+            perc_proc = process_time/total*100
+            perc_prep = prepare_time/total*100
+            sys.stdout.write("\rEpoch-{} Validation ({}/{}) | Score {:f} | Time remaining: {} | Loop: {:.2f}% - Preparation: {:.2f}% - Process: {:.2f}%\n"
+                             .format(self.current_epoch+1, current_iteration, total_iterations, score.val,
+                                     str(datetime.timedelta(seconds=total *
+                                                            (total_iterations-self.current_iteration))),
+                                     perc_loop, perc_prep, perc_proc))
+            sys.stdout.flush()
 
-            if idx % self.config.print_interval == 0:
-                telapsed = time.time() - tstart
-                sys.stdout.write("\rComputing {:d} of {:d}: {:.2f} Hz".format(
-                    idx, len(lines), idx/telapsed))
-                sys.stdout.flush()
-
-        return (all_scores, all_labels, all_trials)
+        return score.val
 
     def finalize(self):
         self.logger.info("Finalizing the operation...")

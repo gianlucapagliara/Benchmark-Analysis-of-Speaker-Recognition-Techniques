@@ -14,23 +14,38 @@ class VoxCeleb1(Dataset):
         self.test_path = test_path
         self.test_list = test_list
 
+        self.data_list = []
+        self.labels = []
+        self.pairs = []
+
         # Read files
         with open(test_list) as dataset_file:
             lines = dataset_file.readlines()
 
-        ## Get a list of unique file names
-        files = sum([x.strip().split()[-2:] for x in lines], [])
-        self.data_list = list(set(files))
-        self.data_list.sort()
+        for line in lines:
+            data = line.split()
+
+            # Append random label if missing
+            if len(data) == 2:
+                data = [random.randint(0, 1)] + data
+            
+            self.labels.append(data[0])
+            self.pairs.append([data[1], data[2]])
 
         if max_files > 0:
-            self.data_list = self.data_list[:max_files]
+            self.pairs = self.pairs[:max_files]
+            self.labels = self.labels[:max_files]
 
     def __len__(self):
-        return len(self.data_list)
+        return len(self.labels)
 
     def __getitem__(self, index):
-        filename = os.path.join(self.test_path, self.data_list[index])
-        audio = loadWAV(filename, self.max_frames,
+        filename_ref = os.path.join(self.test_path, self.pairs[index][0])
+        audio_ref = loadWAV(filename_ref, self.max_frames,
                         evalmode=True, num_eval=self.num_eval)
-        return torch.FloatTensor(audio), self.data_list[index]
+        
+        filename_com = os.path.join(self.test_path, self.pairs[index][1])
+        audio_com = loadWAV(filename_com, self.max_frames,
+                            evalmode=True, num_eval=self.num_eval)
+        
+        return torch.FloatTensor(audio_ref), torch.FloatTensor(audio_com), self.labels[index]

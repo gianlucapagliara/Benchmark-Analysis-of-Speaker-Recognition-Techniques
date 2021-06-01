@@ -11,6 +11,8 @@ class SpeakerNet(nn.Module):
         self.nPerSpeaker = nPerSpeaker
         self.device = device
 
+        self.module = self.__model__.module
+
     def forward(self, data, label=None):
 
         data = data.reshape(-1, data.size()[-1]).to(self.device)
