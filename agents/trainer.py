@@ -87,8 +87,11 @@ class Trainer(BaseAgent):
             Model(**vars(config)), self.__loss__, self.device, config.nPerSpeaker)
         self.__model__ = self.__model__.to(self.device)
 
+        # Checkpoint Loading (if not found start from scratch)
+        self.load_checkpoint(self.config.checkpoint_file)
+        
         # Model Loading (if not found start from scratch)
-        self.load_checkpoint(self.config.initial_model)
+        self.load_parameters(self.config.initial_model)
 
         # Optimizer
         Optimizer = importlib.import_module(
@@ -135,6 +138,26 @@ class Trainer(BaseAgent):
             self.logger.info("No checkpoint exists from '{}'. Skipping...".format(
                 self.config.checkpoint_dir))
 
+    def load_parameters(self, path):
+
+        self_state = self.__model__.state_dict()
+        loaded_state = torch.load(path, map_location="cuda:%d" % self.gpu)
+        for name, param in loaded_state.items():
+            origname = name
+            if name not in self_state:
+                name = name.replace("module.", "")
+
+                if name not in self_state:
+                    print("{} is not in the model.".format(origname))
+                    continue
+
+            if self_state[name].size() != loaded_state[origname].size():
+                print("Wrong parameter length: {}, model: {}, loaded: {}".format(
+                    origname, self_state[name].size(), loaded_state[origname].size()))
+                continue
+
+            self_state[name].copy_(param)
+    
     def save_checkpoint(self, file_name="checkpoint.pth.tar", is_best=0):
         state = {
             'epoch': self.current_epoch,
@@ -257,7 +280,7 @@ class Trainer(BaseAgent):
     def validate(self):
         self.__model__.eval()
 
-        score = AverageMeter()
+        avg_score = AverageMeter()
 
         total_iterations = len(self.test_loader)
         current_iteration = 0
@@ -271,7 +294,7 @@ class Trainer(BaseAgent):
             
             prepare_time = time.time()-start_time-loop_time
 
-            if self.__model__.module.__L__.test_normalize:
+            if self.__model__.__L__.test_normalize:
                 ref_feat = F.normalize(ref_feat, p=2, dim=1)
                 com_feat = F.normalize(com_feat, p=2, dim=1)
 
@@ -279,7 +302,7 @@ class Trainer(BaseAgent):
                 ref_feat.unsqueeze(-1), com_feat.unsqueeze(-1).transpose(0, 2)).detach().cpu().numpy()
 
             score = -1 * np.mean(dist)
-            score.update(score)
+            avg_score.update(score)
 
             process_time = time.time()-start_time-prepare_time-loop_time
             
@@ -288,14 +311,17 @@ class Trainer(BaseAgent):
             perc_loop = loop_time/total*100
             perc_proc = process_time/total*100
             perc_prep = prepare_time/total*100
-            sys.stdout.write("\rEpoch-{} Validation ({}/{}) | Score {:f} | Time remaining: {} | Loop: {:.2f}% - Preparation: {:.2f}% - Process: {:.2f}%\n"
-                             .format(self.current_epoch+1, current_iteration, total_iterations, score.val,
+            current_iteration += 1
+            sys.stdout.write("\rEpoch-{} Validation ({}/{}) | Score {:f} | Time remaining: {} | Loop: {:.2f}% - Preparation: {:.2f}% - Process: {:.2f}%"
+                             .format(self.current_epoch+1, current_iteration, total_iterations, avg_score.val,
                                      str(datetime.timedelta(seconds=total *
                                                             (total_iterations-self.current_iteration))),
                                      perc_loop, perc_prep, perc_proc))
             sys.stdout.flush()
 
-        return score.val
+            start_time = time.time()
+
+        return avg_score.val
 
     def finalize(self):
         self.logger.info("Finalizing the operation...")

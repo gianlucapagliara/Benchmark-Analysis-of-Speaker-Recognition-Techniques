@@ -8,10 +8,11 @@
     "gpu_device": 0,
     
     "model": "ResNetSE34L",
-    "initial_model": "",
+    "checkpoint_file": "",
+    "initial_model": "pretrained_weights/baseline_lite_ap.model",
     "n_mels": 40,
     "encoder_type": "SAP",
-    "nOut": 256,
+    "nOut": 512,
     "checkpoint_dir": "",
     "summary_dir": "",
     
@@ -30,7 +31,7 @@
     "weight_decay": 0,
     "last_FC_size": 512,
 
-    "train": true,
+    "train": false,
     "train_dataset": "VoxCeleb2",
     "train_list": "data/train_list.txt",
     "train_path": "data/voxceleb2/",
@@ -42,16 +43,16 @@
     "sampler": true,
 
     
-    "test": false,
+    "test": true,
     "test_dataset": "VoxCeleb1",
     "test_list": "data/test_list.txt",
     "test_path": "data/voxceleb1/",
-    "eval_frames": 300,
+    "eval_frames": 400,
     "print_interval": 100,
     "test_interval": 10,
     "num_eval": 10,
 
-    "mixedprec": true,
+    "mixedprec": false,
     "distributed": false,
     "async_loading": true
 }
