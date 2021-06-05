@@ -89,7 +89,8 @@ class Trainer(BaseAgent):
         self.__model__ = self.__model__.to(self.device)
 
         # Checkpoint Loading (if not found start from scratch)
-        self.load_checkpoint(self.config.checkpoint_file)
+        if(self.config.get('checkpoint_file', "") != ""):
+            self.load_checkpoint(self.config.checkpoint_file)
 
         # Model Loading (if not found start from scratch)
         self.load_parameters(self.config.initial_model)
@@ -294,23 +295,25 @@ class Trainer(BaseAgent):
         tqdm_test = tqdm(self.test_loader, total=len(
             self.test_loader), desc="Epoch {}".format(self.current_epoch+1))
         for ref, com, label in tqdm_test:
-            # for ref, com, label in self.test_loader:
             current_iteration += 1
 
             loop_time = time.time()-start_time
 
+            # Feature extraction
             with torch.no_grad():
                 ref_feat = self.__model__(ref).to(self.device)
                 com_feat = self.__model__(com).to(self.device)
 
+            # Normalization
             if self.__model__.__L__.test_normalize:
                 ref_feat = F.normalize(ref_feat, p=2, dim=1)
                 com_feat = F.normalize(com_feat, p=2, dim=1)
 
+            # Distance
             dist = F.pairwise_distance(
                 ref_feat.unsqueeze(-1), com_feat.unsqueeze(-1).transpose(0, 2)).detach().cpu().numpy()
-
             score = -1 * np.mean(dist)
+            
             all_scores.append(score)
             all_labels.append(int(label[0]))
 
@@ -332,18 +335,19 @@ class Trainer(BaseAgent):
             # Logging
             total = process_time+loop_time
             perc_proc = process_time/total*100
-            # sys.stdout.write("\rEpoch-{} Validation ({}/{}) | VEER {:2.4f} MDC {:2.5f}| Time remaining: {} | Loop: {:.2f}% - Preparation: {:.2f}% - Process: {:.2f}%"
-            #                  .format(self.current_epoch+1, current_iteration, total_iterations,
-            #                          eer, mindcf,
-            #                          str(datetime.timedelta(
-            #                              seconds=total * (total_iterations-current_iteration))),
-            #                          perc_loop, perc_prep, perc_proc))
-            # sys.stdout.flush()
 
             tqdm_test.set_description("Epoch-{} Validation | VEER {:2.4f} MDC {:2.5f} | Efficiency {:2.2f}% "
                                       .format(self.current_epoch+1, eer, mindcf, perc_proc))
 
             start_time = time.time()
+        
+        validation_time = tqdm_test.format_dict['elapsed']
+        validation_rate = total_iterations / validation_time
+
+        tqdm_test.close()
+
+        self.logger.info("Validation at epoch-{} completed in {:2.1f}s ({:2.1f}samples/s). VEER {:2.4f} MDC {:2.5f} ".format(
+            self.current_epoch+1, validation_time, validation_rate, eer, mindcf))
 
         return result[1]
 
