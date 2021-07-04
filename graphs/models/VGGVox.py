@@ -3,16 +3,15 @@ import torchaudio
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
+from graphs.models.base import VoxModel
 
-class VGGVox(nn.Module):
+
+class VGGVox(VoxModel):
     def __init__(self, device, nOut=1024, encoder_type='SAP', log_input=True, **kwargs):
-        super(VGGVox, self).__init__()
+        super(VGGVox, self).__init__(device)
 
         self.encoder_type = encoder_type
         self.log_input = log_input
-
-        self.device = device
-        self.to(self.device)
 
         self.netcnn = nn.Sequential(
             nn.Conv2d(1, 96, kernel_size=(5, 7),
@@ -97,4 +96,3 @@ class VGGVox(nn.Module):
         x = self.fc(x)
 
         return x
-

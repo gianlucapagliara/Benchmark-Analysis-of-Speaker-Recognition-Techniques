@@ -4,13 +4,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
 from graphs.models.ResNetBlocks import *
+from graphs.models.base import VoxModel
 
-class ResNetSE34L(nn.Module):
+
+class ResNetSE34L(VoxModel):
     def __init__(self, device, block=SEBasicBlock, layers=[3, 4, 6, 3], num_filters=[16, 32, 64, 128], nOut=256, encoder_type='SAP', n_mels=40, log_input=True, **kwargs):
-        super(ResNetSE34L, self).__init__()
-        
-        self.device = device
-        self.to(self.device)
+        super(ResNetSE34L, self).__init__(device)
         
         self.inplanes   = num_filters[0]
         self.encoder_type = encoder_type

@@ -12,7 +12,6 @@ from torch.cuda.amp import autocast, GradScaler
 from tensorboardX import SummaryWriter
 
 from agents.base import BaseAgent
-from graphs.models.SpeakerNet import SpeakerNet
 from utils.misc import print_cuda_statistics
 from utils.metrics import AverageMeter
 from utils.tuneThreshold import tuneThresholdfromScore, ComputeErrorRates, ComputeMinDcf
@@ -84,8 +83,7 @@ class Trainer(BaseAgent):
         # Model
         Model = importlib.import_module(
             'graphs.models.' + config.model).__getattribute__(config.model)
-        self.__model__ = SpeakerNet(
-            Model(**vars(config)), self.__loss__, self.device, config.nPerSpeaker)
+        self.__model__ = Model(**vars(config))
         self.__model__ = self.__model__.to(self.device)
 
         # Checkpoint Loading (if not found start from scratch)
@@ -147,7 +145,8 @@ class Trainer(BaseAgent):
         for name, param in loaded_state.items():
             origname = name
             if name not in self_state:
-                name = name.replace("module.", "")
+                name = name.replace("__S__.", "") # Vox
+                name = name.replace("module.", "") # AutoSpeech
 
                 if name not in self_state:
                     print("{} is not in the model.".format(origname))
@@ -294,62 +293,53 @@ class Trainer(BaseAgent):
 
         tqdm_test = tqdm(self.test_loader, total=len(
             self.test_loader), desc="Epoch {}".format(self.current_epoch+1))
-        for ref, com, label in tqdm_test:
-            current_iteration += 1
+        with torch.no_grad():
+            for ref, com, label in tqdm_test:
+                current_iteration += 1
 
-            loop_time = time.time()-start_time
+                loop_time = time.time()-start_time
 
-            # Feature extraction
-            with torch.no_grad():
-                ref_feat = self.__model__(ref).to(self.device)
-                com_feat = self.__model__(com).to(self.device)
+                label = label.data.cpu().numpy()[0]
+                score = self.__model__.scoring(ref, com)
 
-            # Normalization
-            if self.__model__.__L__.test_normalize:
-                ref_feat = F.normalize(ref_feat, p=2, dim=1)
-                com_feat = F.normalize(com_feat, p=2, dim=1)
+                all_scores.append(score)
+                all_labels.append(label)
 
-            # Distance
-            dist = F.pairwise_distance(
-                ref_feat.unsqueeze(-1), com_feat.unsqueeze(-1).transpose(0, 2)).detach().cpu().numpy()
-            score = -1 * np.mean(dist)
-            
-            all_scores.append(score)
-            all_labels.append(int(label[0]))
+                # if(current_iteration==1):
+                #     print(score)
+                
+                if (current_iteration % self.config.print_interval == 0) or (current_iteration == total_iterations):
+                    result = tuneThresholdfromScore(
+                        all_scores, all_labels, [1, 0.1])
+                    p_target = 0.05
+                    c_miss = 1
+                    c_fa = 1
+                    fnrs, fprs, thresholds = ComputeErrorRates(
+                        all_scores, all_labels)
+                    mindcf, threshold = ComputeMinDcf(
+                        fnrs, fprs, thresholds, p_target, c_miss, c_fa)
+                    eer = result[1]
 
-            # Scoring
-            if (current_iteration % self.config.print_interval == 0) or (current_iteration == total_iterations):
-                result = tuneThresholdfromScore(
-                    all_scores, all_labels, [1, 0.1])
-                p_target = 0.05
-                c_miss = 1
-                c_fa = 1
-                fnrs, fprs, thresholds = ComputeErrorRates(
-                    all_scores, all_labels)
-                mindcf, threshold = ComputeMinDcf(
-                    fnrs, fprs, thresholds, p_target, c_miss, c_fa)
-                eer = result[1]
+                process_time = time.time()-start_time-loop_time
 
-            process_time = time.time()-start_time-loop_time
+                # Logging
+                total = process_time+loop_time
+                perc_proc = process_time/total*100
 
-            # Logging
-            total = process_time+loop_time
-            perc_proc = process_time/total*100
+                tqdm_test.set_description("Epoch-{} Validation | VEER {:2.4f}% MDC {:2.5f} | Efficiency {:2.2f}% "
+                                        .format(self.current_epoch+1, eer, mindcf, perc_proc))
 
-            tqdm_test.set_description("Epoch-{} Validation | VEER {:2.4f} MDC {:2.5f} | Efficiency {:2.2f}% "
-                                      .format(self.current_epoch+1, eer, mindcf, perc_proc))
-
-            start_time = time.time()
+                start_time = time.time()
         
         validation_time = tqdm_test.format_dict['elapsed']
         validation_rate = total_iterations / validation_time
 
         tqdm_test.close()
 
-        self.logger.info("Validation at epoch-{} completed in {:2.1f}s ({:2.1f}samples/s). VEER {:2.4f} MDC {:2.5f} ".format(
+        self.logger.info("Validation at epoch-{} completed in {:2.1f}s ({:2.1f}samples/s). VEER {:2.4f}% MDC {:2.5f} ".format(
             self.current_epoch+1, validation_time, validation_rate, eer, mindcf))
 
-        return result[1]
+        return eer
 
     def finalize(self):
         self.logger.info("Finalizing the operation...")
