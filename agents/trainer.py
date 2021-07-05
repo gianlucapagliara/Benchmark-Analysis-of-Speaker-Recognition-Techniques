@@ -77,14 +77,12 @@ class Trainer(BaseAgent):
         # Loss
         LossFunction = importlib.import_module(
             'graphs.losses.'+config.loss_function).__getattribute__('LossFunction')
-        self.__loss__ = LossFunction(**vars(config))
-        self.__loss__ = self.__loss__.to(self.device)
+        self.__loss__ = LossFunction(**vars(config)).to(self.device)
 
         # Model
         Model = importlib.import_module(
             'graphs.models.' + config.model).__getattribute__(config.model)
-        self.__model__ = Model(**vars(config))
-        self.__model__ = self.__model__.to(self.device)
+        self.__model__ = Model(**vars(config)).to(self.device)
 
         # Checkpoint Loading (if not found start from scratch)
         if(self.config.get('checkpoint_file', "") != ""):
@@ -145,8 +143,8 @@ class Trainer(BaseAgent):
         for name, param in loaded_state.items():
             origname = name
             if name not in self_state:
-                name = name.replace("__S__.", "") # Vox
-                name = name.replace("module.", "") # AutoSpeech
+                name = name.replace("__S__.", "")  # Vox
+                name = name.replace("module.", "")  # AutoSpeech
 
                 if name not in self_state:
                     print("{} is not in the model.".format(origname))
@@ -219,7 +217,7 @@ class Trainer(BaseAgent):
         for x, y in self.train_loader:
             loop_time = time.time()-start_time
 
-            x = x.transpose(1, 0)
+            x = x.transpose(1, 0).to(self.device)
             y = torch.LongTensor(y).to(self.device)
 
             #prepare_time = time.time()-start_time
@@ -229,12 +227,14 @@ class Trainer(BaseAgent):
 
             if self.mixedprec:
                 with autocast():
-                    cur_loss, curr_top1 = self.__model__(x, y)
+                    cur_loss, curr_top1 = self.__model__.forward_loss(
+                        x, y, self.__loss__, **vars(self.config))
                 self.scaler.scale(cur_loss).backward()
                 self.scaler.step(self.__optimizer__)
                 self.scaler.update()
             else:
-                cur_loss, curr_top1 = self.__model__(x, y)
+                cur_loss, curr_top1 = self.__model__.forward_loss(
+                    x, y, self.__loss__, **vars(self.config))
                 cur_loss.backward()
                 self.__optimizer__.step()
 
@@ -293,44 +293,47 @@ class Trainer(BaseAgent):
 
         tqdm_test = tqdm(self.test_loader, total=len(
             self.test_loader), desc="Epoch {}".format(self.current_epoch+1))
-        with torch.no_grad():
-            for ref, com, label in tqdm_test:
-                current_iteration += 1
+        for ref, com, label in tqdm_test:
+            current_iteration += 1
 
-                loop_time = time.time()-start_time
+            loop_time = time.time()-start_time
 
-                label = label.data.cpu().numpy()[0]
-                score = self.__model__.scoring(ref, com)
+            ref = ref.to(self.device)
+            com = com.to(self.device)
+            label = int(label.data.cpu().numpy()[0])
+            with torch.no_grad():
+                score = self.__model__.scoring(
+                    ref, com, normalize=self.__loss__.test_normalize)
 
-                all_scores.append(score)
-                all_labels.append(label)
+            all_scores.append(score)
+            all_labels.append(label)
 
-                # if(current_iteration==1):
-                #     print(score)
-                
-                if (current_iteration % self.config.print_interval == 0) or (current_iteration == total_iterations):
-                    result = tuneThresholdfromScore(
-                        all_scores, all_labels, [1, 0.1])
-                    p_target = 0.05
-                    c_miss = 1
-                    c_fa = 1
-                    fnrs, fprs, thresholds = ComputeErrorRates(
-                        all_scores, all_labels)
-                    mindcf, threshold = ComputeMinDcf(
-                        fnrs, fprs, thresholds, p_target, c_miss, c_fa)
-                    eer = result[1]
+            # if(current_iteration==1):
+            #     print(score)
 
-                process_time = time.time()-start_time-loop_time
+            if (current_iteration % self.config.print_interval == 0) or (current_iteration == total_iterations):
+                result = tuneThresholdfromScore(
+                    all_scores, all_labels, [1, 0.1])
+                p_target = 0.05
+                c_miss = 1
+                c_fa = 1
+                fnrs, fprs, thresholds = ComputeErrorRates(
+                    all_scores, all_labels)
+                mindcf, threshold = ComputeMinDcf(
+                    fnrs, fprs, thresholds, p_target, c_miss, c_fa)
+                eer = result[1]
 
-                # Logging
-                total = process_time+loop_time
-                perc_proc = process_time/total*100
+            process_time = time.time()-start_time-loop_time
 
-                tqdm_test.set_description("Epoch-{} Validation | VEER {:2.4f}% MDC {:2.5f} | Efficiency {:2.2f}% "
+            # Logging
+            total = process_time+loop_time
+            perc_proc = process_time/total*100
+
+            tqdm_test.set_description("Epoch-{} Validation | VEER {:2.4f}% MDC {:2.5f} | Efficiency {:2.2f}% "
                                         .format(self.current_epoch+1, eer, mindcf, perc_proc))
 
-                start_time = time.time()
-        
+            start_time = time.time()
+
         validation_time = tqdm_test.format_dict['elapsed']
         validation_rate = total_iterations / validation_time
 

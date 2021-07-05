@@ -45,7 +45,7 @@
     "test": true,
     "test_dataset": "VoxCeleb1",
     "test_list": "data/test_list.txt",
-    "test_path": "data/voxceleb1/test/",
+    "test_path": "data/voxceleb1/test/wav/",
     "eval_frames": 400,
     "print_interval": 100,
     "test_interval": 10,

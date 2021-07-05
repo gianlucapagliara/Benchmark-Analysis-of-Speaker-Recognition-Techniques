@@ -49,4 +49,4 @@ class VoxCeleb1(Dataset):
         audio_com = loadWAV(filename_com, self.max_frames,
                             evalmode=True, num_eval=self.num_eval)
         
-        return torch.FloatTensor(audio_ref), torch.FloatTensor(audio_com), self.labels[index]
+        return torch.FloatTensor(audio_ref), torch.FloatTensor(audio_com), int(self.labels[index][0])

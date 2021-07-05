@@ -2,33 +2,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-'''
-class SpeakerNet(nn.Module):
-
-    def __init__(self, model, loss, device, nPerSpeaker=1, **kwargs):
-        super(SpeakerNet, self).__init__()
-
-        self.__S__ = model
-        self.__L__ = loss
-        self.nPerSpeaker = nPerSpeaker
-        self.device = device
-
-    def forward(self, data, label=None):
-        # comment for AutoSpeech
-        data = data.reshape(-1, data.size()[-1]).to(self.device)
-        outp = self.__S__(data)
-
-        if label == None:
-            return outp
-        else:
-            outp = outp.reshape(self.nPerSpeaker, -1,
-                                outp.size()[-1]).transpose(1, 0).squeeze(1)  # comment for AutoSpeech
-
-            nloss, prec1 = self.__L__.forward(outp, label)
-
-            return nloss, prec1
-'''
-
 class BaseModel(nn.Module):
     """
     This base class will contain the base functions to be overloaded by any model you will implement.
@@ -37,12 +10,24 @@ class BaseModel(nn.Module):
     def __init__(self, device):
         super(BaseModel, self).__init__()
         self.device = device
-        self.to(self.device)
+        self = self.to(self.device)
 
-    def forward(self, input):
-        return nn.Module.forward(self, input)
+    def preforward(self, x):
+        return x
 
-    def scoring(self, ref, com):
+    def forward(self, x):
+        x = self.preforward(x)
+        x = super(BaseModel, self).forward(self, x)
+        return x
+
+    def forward_loss(self, x, label, loss, **kwargs):
+        x = self.forward(x)
+        nloss, prec1 = loss.forward(x, label)
+
+        return nloss, prec1
+
+
+    def scoring(self, ref, com, normalize=False):
         raise NotImplementedError
 
 
@@ -50,13 +35,13 @@ class AutoSpeechModel(BaseModel):
     def __init__(self, device):
         super(AutoSpeechModel, self).__init__(device)
 
-    def forward(self, input):
-        return BaseModel.forward(self, input)
+    def forward(self, x):
+        return super(AutoSpeechModel, self).forward(self, x)
 
-    def scoring(self, ref, com):
+    def scoring(self, ref, com, normalize=False):
         # Data shape preparation
-        ref = ref.to(self.device).squeeze(0)
-        com = com.to(self.device).squeeze(0)
+        ref = ref.squeeze(0)
+        com = com.squeeze(0)
 
         # Feature extraction
         ref_feat = self(ref).to(self.device)
@@ -77,27 +62,26 @@ class VoxModel(BaseModel):
     def __init__(self, device):
         super(VoxModel, self).__init__(device)
 
-    def forward(self, input):
-        input = input.reshape(-1, input.size()[-1]).to(self.device)
-        outp = BaseModel.forward(self, input)
+    def preforward(self, x):
+        x = x.reshape(-1, x.size()[-1]).to(self.device)
+        return x
 
-        return outp
+    def forward_loss(self, x, label, loss, nPerSpeaker, **kwargs): # TODO: improve implementation
+        x = self.forward(x)
+        x = x.reshape(nPerSpeaker, -1,
+                            x.size()[-1]).transpose(1, 0).squeeze(1)
 
-    def forward(self, input, label):  # TODO: fix -> derived from SpeakerNet
-        outp = outp.reshape(self.nPerSpeaker, -1,
-                            outp.size()[-1]).transpose(1, 0).squeeze(1)
-
-        nloss, prec1 = self.__L__.forward(outp, label)
+        nloss, prec1 = loss.forward(x, label)
 
         return nloss, prec1
 
-    def scoring(self, ref, com):
+    def scoring(self, ref, com, normalize=False):
         # Feature extraction
         ref_feat = self(ref).to(self.device)
         com_feat = self(com).to(self.device)
 
         # Normalization
-        if self.__L__.test_normalize:
+        if normalize:
             ref_feat = F.normalize(ref_feat, p=2, dim=1)
             com_feat = F.normalize(com_feat, p=2, dim=1)
 
@@ -107,6 +91,7 @@ class VoxModel(BaseModel):
 
         # Distance
         score = F.pairwise_distance(ref_feat, com_feat)
-        score = -1 * score.data.cpu().numpy()[0]
+        score = score.detach().cpu().numpy()
+        score = -1 * np.mean(score)
 
         return score

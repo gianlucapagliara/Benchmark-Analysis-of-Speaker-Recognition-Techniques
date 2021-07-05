@@ -10,7 +10,7 @@ from graphs.models.base import VoxModel
 class ResNetSE34L(VoxModel):
     def __init__(self, device, block=SEBasicBlock, layers=[3, 4, 6, 3], num_filters=[16, 32, 64, 128], nOut=256, encoder_type='SAP', n_mels=40, log_input=True, **kwargs):
         super(ResNetSE34L, self).__init__(device)
-        
+
         self.inplanes   = num_filters[0]
         self.encoder_type = encoder_type
         self.n_mels     = n_mels
@@ -72,6 +72,7 @@ class ResNetSE34L(VoxModel):
         return out
 
     def forward(self, x):
+        x = self.preforward(x)
 
         with torch.no_grad():
             with torch.cuda.amp.autocast(enabled=False):
