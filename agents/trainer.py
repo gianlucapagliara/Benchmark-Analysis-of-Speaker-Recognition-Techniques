@@ -54,10 +54,10 @@ class Trainer(BaseAgent):
                 self.train_dataset,
                 batch_size=config.batch_size,
                 num_workers=config.nDataLoaderThread,
-                sampler=self.sampler,
                 pin_memory=False,
-                # worker_init_fn=worker_init_fn,
                 drop_last=True,
+                sampler=self.sampler,
+                # worker_init_fn=worker_init_fn,
             )
 
         self.to_test = config.test
@@ -68,16 +68,14 @@ class Trainer(BaseAgent):
             self.test_loader = torch.utils.data.DataLoader(
                 self.test_dataset,
                 batch_size=1,
-                shuffle=False,
                 num_workers=config.nDataLoaderThread,
+                pin_memory=True, # useful?
+                shuffle=False,
                 drop_last=False,
                 # sampler=self.test_sampler
             )
+            self.test_normalize = False
 
-        # Loss
-        LossFunction = importlib.import_module(
-            'graphs.losses.'+config.loss_function).__getattribute__('LossFunction')
-        self.__loss__ = LossFunction(**vars(config)).to(self.device)
 
         # Model
         Model = importlib.import_module(
@@ -87,22 +85,31 @@ class Trainer(BaseAgent):
         # Checkpoint Loading (if not found start from scratch)
         if(self.config.get('checkpoint_file', "") != ""):
             self.load_checkpoint(self.config.checkpoint_file)
-
+        
         # Model Loading (if not found start from scratch)
-        self.load_parameters(self.config.initial_model)
+        if(self.config.get('initial_model', "") != ""):
+            self.load_parameters(self.config.initial_model)
 
-        # Optimizer
-        Optimizer = importlib.import_module(
-            'graphs.optimizers.' + config.optimizer).__getattribute__('Optimizer')
-        self.__optimizer__ = Optimizer(
-            self.__model__.parameters(), **vars(config))
+        if self.to_train:
+            # Loss
+            LossFunction = importlib.import_module(
+                'graphs.losses.'+config.loss_function).__getattribute__('LossFunction')
+            self.__loss__ = LossFunction(**vars(config)).to(self.device)
+            self.test_normalize = self.__loss__.test_normalize
 
-        # Scheduler
-        Scheduler = importlib.import_module(
-            'graphs.schedulers.'+config.scheduler).__getattribute__('Scheduler')
-        self.__scheduler__, self.lr_step = Scheduler(
-            self.__optimizer__, **vars(config))
-        assert self.lr_step in ['epoch', 'iteration']
+
+            # Optimizer
+            Optimizer = importlib.import_module(
+                'graphs.optimizers.' + config.optimizer).__getattribute__('Optimizer')
+            self.__optimizer__ = Optimizer(
+                self.__model__.parameters(), **vars(config))
+
+            # Scheduler
+            Scheduler = importlib.import_module(
+                'graphs.schedulers.'+config.scheduler).__getattribute__('Scheduler')
+            self.__scheduler__, self.lr_step = Scheduler(
+                self.__optimizer__, **vars(config))
+            assert self.lr_step in ['epoch', 'iteration']
 
         # Scaler
         self.scaler = GradScaler()
@@ -140,6 +147,10 @@ class Trainer(BaseAgent):
 
         self_state = self.__model__.state_dict()
         loaded_state = torch.load(path, map_location="cuda:%d" % self.gpu)
+        
+        if loaded_state.get('state_dict', "") != "":
+            loaded_state=loaded_state['state_dict']
+        
         for name, param in loaded_state.items():
             origname = name
             if name not in self_state:
@@ -303,7 +314,7 @@ class Trainer(BaseAgent):
             label = int(label.data.cpu().numpy()[0])
             with torch.no_grad():
                 score = self.__model__.scoring(
-                    ref, com, normalize=self.__loss__.test_normalize)
+                    ref, com, normalize=self.test_normalize)
 
             all_scores.append(score)
             all_labels.append(label)
@@ -322,7 +333,7 @@ class Trainer(BaseAgent):
                 mindcf, threshold = ComputeMinDcf(
                     fnrs, fprs, thresholds, p_target, c_miss, c_fa)
                 eer = result[1]
-
+            
             process_time = time.time()-start_time-loop_time
 
             # Logging

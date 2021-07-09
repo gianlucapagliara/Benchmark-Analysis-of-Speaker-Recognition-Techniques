@@ -73,7 +73,7 @@ class Cell(nn.Module):
 
 class AutoSpeech(AutoSpeechModel):
 
-  def __init__(self, device, C, num_classes, layers, genotype=PROPOSED_GENOTYPE, drop_path_prob = 0.2, **kwargs):
+  def __init__(self, device, C, num_classes, layers, genotype=PROPOSED_GENOTYPE, drop_path_prob = 0.0, **kwargs):
     super(AutoSpeech, self).__init__(device)
     self._C = C
     self._num_classes = num_classes

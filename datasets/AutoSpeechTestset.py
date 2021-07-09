@@ -29,8 +29,6 @@ def get_test_paths(pairs_path, db_dir):
 
         path0 = db_dir.joinpath(convert_folder_name(pair[1]))
         path1 = db_dir.joinpath(convert_folder_name(pair[2]))
-        #path0 = db_dir + pair[1] # TODO: remove
-        #path1 = db_dir + pair[2] # TODO: remove
 
         if os.path.exists(path0) and os.path.exists(path1):    # Only add the pair if both paths exist
             path_list.append((path0,path1,issame))
@@ -48,7 +46,6 @@ class AutoSpeechTestset(Dataset):
         super(AutoSpeechTestset, self).__init__()
         self.test_path = Path(test_path)
         self.root = self.test_path.joinpath('feature', 'test')
-        # self.root = test_path # TODO: remove
         self.test_pair_txt_fpath = Path(test_list)
         self.test_pairs = get_test_paths(self.test_pair_txt_fpath, self.root)
         self.partial_n_frames = partial_n_frames
@@ -57,11 +54,8 @@ class AutoSpeechTestset(Dataset):
         self.transform = T.Compose([
             Normalize(mean, std)
         ])
-        self.transform = None
 
     def load_feature(self, feature_path):
-        # feature = preprocess_wav(feature_path) # TODO: remove
-        # feature = wav_to_spectrogram(feature) # TODO: remove
         feature = np.load(feature_path)
         test_sequence = generate_test_sequence(feature, self.partial_n_frames)
         return test_sequence

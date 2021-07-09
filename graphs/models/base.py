@@ -51,9 +51,10 @@ class AutoSpeechModel(BaseModel):
         com_feat = com_feat.mean(dim=0).unsqueeze(0)
 
         # Distance
-        # score = F.cosine_similarity(ref_feat, com_feat)
-        score = F.pairwise_distance(ref_feat, com_feat)
-        score = -1 * score.data.cpu().numpy()[0]
+        score = F.cosine_similarity(ref_feat, com_feat)
+        score = score.data.cpu().numpy()[0]
+        # score = F.pairwise_distance(ref_feat, com_feat)
+        # score = -1 * score.data.cpu().numpy()[0]
 
         return score
 
