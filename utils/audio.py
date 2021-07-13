@@ -4,10 +4,13 @@ from pathlib import Path
 import numpy as np
 import random
 import soundfile
+import speechpy
 
 from tqdm import tqdm
 
 from utils.params import *
+
+# --- Vox functions
 
 def loadWAV(filename, max_frames, evalmode=True, num_eval=10):
 
@@ -41,7 +44,7 @@ def loadWAV(filename, max_frames, evalmode=True, num_eval=10):
 
     return feat
 
-# AutoSpeech audio functions
+# --- AutoSpeech audio functions
 
 int16_max = (2 ** 15) - 1
 
@@ -83,7 +86,7 @@ def normalize_volume(wav, target_dBFS, increase_only=False, decrease_only=False)
         return wav
     return wav * (10 ** (dBFS_change / 20))
 
-# Auto Speech utils functions
+# --- Auto Speech utils functions
 
 class Utterance:
     def __init__(self, frames_fpath):
@@ -186,3 +189,72 @@ def compute_mean_std(dataset_dirs: list, output_path_mean: Path, output_path_std
 
     np.save(output_path_mean, mean)
     np.save(output_path_std, std)
+
+# --- CNN3D functions
+def get_logenergy(signal, fs, num_coefficient=40):
+    # Staching frames
+    frames = speechpy.processing.stack_frames(signal, sampling_frequency=fs, frame_length=0.025,
+                                              frame_stride=0.01,
+                                              zero_padding=True)
+
+    # # Extracting power spectrum (choosing 3 seconds and elimination of DC)
+    power_spectrum = speechpy.processing.power_spectrum(
+        frames, fft_points=2 * num_coefficient)[:, 1:]
+
+    logenergy = speechpy.feature.lmfe(signal, sampling_frequency=fs, frame_length=0.025, frame_stride=0.01,
+                                      num_filters=num_coefficient, fft_length=1024, low_frequency=0,
+                                      high_frequency=None)
+
+    return logenergy
+
+
+class CMVN(object):
+    """
+    Cepstral mean variance normalization.
+    """
+
+    def __call__(self, feature):
+        # Mean variance normalization of the spectrum.
+        feature_norm = speechpy.processing.cmvn(
+            feature, variance_normalization=False)
+
+        return feature_norm
+
+
+class Feature_Cube(object):
+    """
+    Return a feature cube of desired size.
+
+    Args:
+        cube_shape (tuple): The shape of the feature cube.
+    """
+
+    def __init__(self, cube_shape):
+        assert isinstance(cube_shape, (tuple))
+        self.cube_shape = cube_shape
+        self.num_frames = cube_shape[0]
+        self.num_coefficient = cube_shape[1]
+        self.num_utterances = cube_shape[2]
+
+    def __call__(self, feature):
+        # Feature cube.
+        feature_cube = np.zeros(
+            (self.num_utterances, self.num_frames, self.num_coefficient), dtype=np.float32)
+
+        # Get some random starting point for creation of the future cube of size (num_frames x num_coefficient x num_utterances)
+        # Since we are doing random indexing, the data augmentation is done as well because in each iteration it returns another indexing!
+        idx = np.random.randint(
+            feature.shape[0] - self.num_frames, size=self.num_utterances)
+        for num, index in enumerate(idx):
+            feature_cube[num, :, :] = feature[index:index + self.num_frames, :]
+
+        return feature_cube[None, :, :, :]
+
+
+class ToOutput(object):
+    """
+    Return the output.
+    """
+
+    def __call__(self, feature):
+        return feature

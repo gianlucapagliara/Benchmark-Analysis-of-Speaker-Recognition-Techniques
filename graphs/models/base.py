@@ -28,7 +28,16 @@ class BaseModel(nn.Module):
 
 
     def scoring(self, ref, com, normalize=False):
-        raise NotImplementedError
+        # Feature extraction
+        ref_feat = self(ref).to(self.device)
+        com_feat = self(com).to(self.device)
+
+        # Distance
+        score = F.pairwise_distance(ref_feat, com_feat)
+        score = score.detach().cpu().numpy()
+        score = -1 * np.mean(score)
+
+        return score
 
 
 class AutoSpeechModel(BaseModel):
