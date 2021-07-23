@@ -1,0 +1,32 @@
+{
+    "exp_name": "SincNet Pretrained",
+    "agent": "",
+    "verbose": false,
+    "seed": 1337,
+
+    "cuda": true,
+    "gpu_device": 0,
+    
+    "model": "MobileNetV2",
+    "checkpoint_dir": "",
+    "checkpoint_file": "",
+    "initial_model": "",
+    "summary_dir": "",
+    
+    "nDataLoaderThread": 1,
+    
+    "train": false,
+    
+    "test": true,
+    "test_dataset": "MobileSinc",
+    "test_list": "data/test_list.txt",
+    "test_path": "data/voxceleb1/test/wav/",
+    "print_interval": 100,
+    "test_interval": 10,
+    "eval_frames": 400,
+    "num_eval": 10,
+    
+    "mixedprec": false,
+    "distributed": false,
+    "async_loading": true
+}

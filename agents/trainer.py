@@ -144,30 +144,13 @@ class Trainer(BaseAgent):
                 self.config.checkpoint_dir))
 
     def load_parameters(self, path):
-
-        self_state = self.__model__.state_dict()
         loaded_state = torch.load(path, map_location="cuda:%d" % self.gpu)
         
         if loaded_state.get('state_dict', "") != "":
             loaded_state=loaded_state['state_dict']
+
+        self.__model__.load_state_dict(loaded_state)
         
-        for name, param in loaded_state.items():
-            origname = name
-            if name not in self_state:
-                name = name.replace("__S__.", "")  # Vox
-                name = name.replace("module.", "")  # AutoSpeech
-
-                if name not in self_state:
-                    print("{} is not in the model.".format(origname))
-                    continue
-
-            if self_state[name].size() != loaded_state[origname].size():
-                print("Wrong parameter length: {}, model: {}, loaded: {}".format(
-                    origname, self_state[name].size(), loaded_state[origname].size()))
-                continue
-
-            self_state[name].copy_(param)
-
     def save_checkpoint(self, file_name="checkpoint.pth.tar", is_best=0):
         state = {
             'epoch': self.current_epoch,

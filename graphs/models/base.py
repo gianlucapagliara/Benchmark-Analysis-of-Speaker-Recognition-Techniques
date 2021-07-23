@@ -26,11 +26,33 @@ class BaseModel(nn.Module):
 
         return nloss, prec1
 
+    def load_state_dict(self, state_dict):
+        self_state = self.state_dict()
+
+        for name, param in state_dict.items():
+            origname = name
+            if name not in self_state:
+                if name not in self_state:
+                    print("{} is not in the model.".format(origname))
+                    continue
+
+            if self_state[name].size() != state_dict[origname].size():
+                print("Wrong parameter length: {}, model: {}, loaded: {}".format(
+                    origname, self_state[name].size(), state_dict[origname].size()))
+                continue
+
+            self_state[name].copy_(param)
+
 
     def scoring(self, ref, com, normalize=False):
         # Feature extraction
         ref_feat = self(ref).to(self.device)
         com_feat = self(com).to(self.device)
+
+        # print(f'Ref: {ref_feat.shape}')
+        # print(ref_feat.data)
+        # print(f'Com: {com_feat.shape}')
+        # print(com_feat.data)
 
         # Distance
         score = F.pairwise_distance(ref_feat, com_feat)
@@ -46,6 +68,13 @@ class AutoSpeechModel(BaseModel):
 
     def forward(self, x):
         return super(AutoSpeechModel, self).forward(self, x)
+
+    def load_state_dict(self, state_dict):
+        new_state_dict = {}
+        for name in state_dict.keys():
+            new_name = name.replace("module.", "")
+            new_state_dict[new_name] = state_dict[name]
+        super(AutoSpeechModel, self).load_state_dict(new_state_dict)
 
     def scoring(self, ref, com, normalize=False):
         # Data shape preparation
@@ -84,6 +113,13 @@ class VoxModel(BaseModel):
         nloss, prec1 = loss.forward(x, label)
 
         return nloss, prec1
+
+    def load_state_dict(self, state_dict):
+        new_state_dict = {}
+        for name in state_dict.keys():
+            new_name = name.replace("__S__.", "")
+            new_state_dict[new_name] = state_dict[name]
+        super(VoxModel, self).load_state_dict(new_state_dict)
 
     def scoring(self, ref, com, normalize=False):
         # Feature extraction
