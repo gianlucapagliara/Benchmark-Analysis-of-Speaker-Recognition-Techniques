@@ -13,7 +13,7 @@ from tensorboardX import SummaryWriter
 
 from agents.base import BaseAgent
 from utils.misc import print_cuda_statistics
-from utils.metrics import AverageMeter
+from utils.metrics import *
 from utils.tuneThreshold import tuneThresholdfromScore, ComputeErrorRates, ComputeMinDcf
 from datasets.Sampler import Sampler
 
@@ -41,10 +41,11 @@ class Trainer(BaseAgent):
             self.logger.info("Operation will be on ***** CPU ***** ")
         self.gpu = config.gpu_device
         self.config.device = self.device
+        self.print_metrics = self.config.get('print_metrics', False)
 
         # Datasets
         self.to_train = config.train
-        if self.to_train:
+        if config.get('train_dataset', '') != '':
             TrainDataset = importlib.import_module(
                 'datasets.' + config.train_dataset).__getattribute__(config.train_dataset)
             self.train_dataset = TrainDataset(**vars(config))
@@ -61,7 +62,7 @@ class Trainer(BaseAgent):
             )
 
         self.to_test = config.test
-        if self.to_test:
+        if config.get('test_dataset', '') != '':
             TestDataset = importlib.import_module(
                 'datasets.' + config.test_dataset).__getattribute__(config.test_dataset)
             self.test_dataset = TestDataset(**vars(config))
@@ -167,6 +168,8 @@ class Trainer(BaseAgent):
 
     def run(self):
         try:
+            if self.print_metrics:
+                self.get_metrics()
             if self.to_train:
                 self.train()
             if self.to_test:
@@ -174,6 +177,42 @@ class Trainer(BaseAgent):
 
         except KeyboardInterrupt:
             self.logger.info("You have entered CTRL+C... Wait to finalize.")
+
+    def get_metrics(self):
+        batch_sizes = self.config['metrics_batches'] if self.config.get(
+            'metrics_batches', '') else [1, 2, 4, 8, 16, 32, 64]
+        input_size = next(iter(self.test_loader))[0].shape
+
+        self.logger.info('Computing parameters...')
+        total_params, trainable_params = compute_parameters(self.__model__)
+        self.logger.info('Computing complexity...')
+        avg_flops_cost = compute_complexity(self.__model__, input_size)
+        self.logger.info('Computing mean inference time...')
+        mean_tfp, std_tfp = compute_inference_time(self.__model__, input_size)
+        self.logger.info('Computing memory usage...')
+        memory = compute_memory_usage(self.__model__, input_size)
+
+        self.logger.info('================================================================')
+        self.logger.info(
+            str(self.__model__.__class__).split('.')[-1].split("'")[0])
+        self.logger.info('================================================================')
+        self.logger.info('Total params: ' + str(total_params))
+        self.logger.info('Trainable params: ' + str(trainable_params))
+        self.logger.info('Non-trainable params: ' + str(total_params - trainable_params))
+        self.logger.info('----------------------------------------------------------------')
+        self.logger.info(f'Average flops cost: {avg_flops_cost}')
+        self.logger.info('----------------------------------------------------------------')
+        self.logger.info('Average inference time for every batch size:')
+        batch_sizes = [1, 2, 4, 8, 16, 32, 64]
+        for b, m, s in zip(batch_sizes, mean_tfp, std_tfp):
+            self.logger.info(f'{b}: {m:.2f} +/- {s:.2f}')
+        self.logger.info('----------------------------------------------------------------')
+        self.logger.info('Memory usage for every batch size:')
+        batch_sizes = [1, 2, 4, 8, 16, 32, 64]
+        for b, m in zip(batch_sizes, memory):
+            self.logger.info(f'{b}: {m}')
+        self.logger.info(
+            '================================================================')
 
     def train(self):
         for epoch in range(self.current_epoch, self.config.max_epoch):

@@ -3,6 +3,7 @@ import numpy as np
 import time
 import GPUtil
 from utils.complexity_utils import add_flops_counting_methods, summary
+import copy
 
 class AverageMeter:
     """
@@ -80,19 +81,20 @@ def accuracy(output, target, topk=(1,)):
     return res
 
 
-def compute_memory_usage(load_model_function, batch_sizes=[1, 2, 4, 8, 16, 32, 64]):
+def compute_memory_usage(model, input_size, batch_sizes=[1, 2, 4, 8, 16, 32, 64]):
     memory = []
     gpu = GPUtil.getGPUs()[0]
     empty_gpu = gpu.memoryUsed
 
-    model = load_model_function()
+    new_model = copy.deepcopy(model)
     for i, bs in enumerate(batch_sizes):
         with torch.no_grad():
-            _ = model(torch.randn(bs, *model.input_size).cuda(non_blocking=True))
+            _ = new_model(torch.randn(
+                bs, *input_size).cuda(non_blocking=True))
 
         gpu = GPUtil.getGPUs()[0]
         memory.append(gpu.memoryUsed)
-    del model
+    del new_model
     torch.cuda.empty_cache()
 
     return memory
@@ -153,5 +155,16 @@ def compute_complexity(model, input_size, batch_size=64):
         _ = model(torch.randn(batch_size, *
                         input_size).cuda(non_blocking=True))
 
-    summ, n_params = summary(input_size, model)
-    return model.compute_average_flops_cost() / 1e9 / 2, n_params.item()
+    return model.compute_average_flops_cost() / 1e9 / 2
+
+
+def compute_parameters(model):
+    total_params = 0
+    trainable_params = 0
+
+    for name, parameter in model.named_parameters():
+        param = parameter.numel()
+        total_params += param
+        if parameter.requires_grad:
+            trainable_params += param
+    return total_params, trainable_params

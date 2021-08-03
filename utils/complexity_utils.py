@@ -296,8 +296,10 @@ def summary(input_size, model):
 
             params = 0
             if hasattr(module, 'weight'):
-                params += torch.prod(torch.LongTensor(list(module.weight.size())))
-                if module.weight.requires_grad:
+                if hasattr(module.weight, 'size'):
+                    params += torch.prod(torch.LongTensor(list(module.weight.size())))
+                
+                if hasattr(module.weight, 'requires_grad') and module.weight.requires_grad:
                     summary[m_key]['trainable'] = True
                 else:
                     summary[m_key]['trainable'] = False
@@ -329,24 +331,18 @@ def summary(input_size, model):
     for h in hooks:
         h.remove()
 
-    # print('----------------------------------------------------------------')
-    # line_new = '{:>20}  {:>25} {:>15}'.format('Layer (type)', 'Output Shape', 'Param #')
-    # print(line_new)
-    # print('================================================================')
     total_params = 0
     trainable_params = 0
     for layer in summary:
-        ## input_shape, output_shape, trainable, nb_params
-        line_new = '{:>20}  {:>25} {:>15}'.format(
-            layer, summary[layer]['output_shape'], summary[layer]['nb_params'])
         total_params += summary[layer]['nb_params']
         if 'trainable' in summary[layer]:
             if summary[layer]['trainable'] == True:
                 trainable_params += summary[layer]['nb_params']
-    #    print(line_new)
+    
     print('================================================================')
     print('Total params: ' + str(total_params))
     print('Trainable params: ' + str(trainable_params))
     print('Non-trainable params: ' + str(total_params - trainable_params))
     print('----------------------------------------------------------------')
+    
     return summary, total_params
