@@ -81,20 +81,17 @@ def accuracy(output, target, topk=(1,)):
     return res
 
 
-def compute_memory_usage(model, input_size, batch_sizes=[1, 2, 4, 8, 16, 32, 64]):
+def compute_memory_usage(model, input_size, batch_sizes=[1, 2, 4, 8, 16, 32, 64], model_memory=0):
     memory = []
     gpu = GPUtil.getGPUs()[0]
     empty_gpu = gpu.memoryUsed
 
-    new_model = copy.deepcopy(model)
     for i, bs in enumerate(batch_sizes):
         with torch.no_grad():
-            _ = new_model(torch.randn(
+            _ = model(torch.randn(
                 bs, *input_size).cuda(non_blocking=True))
 
-        gpu = GPUtil.getGPUs()[0]
-        memory.append(gpu.memoryUsed)
-    del new_model
+        memory.append(model_memory + gpu.memoryUsed-empty_gpu)
     torch.cuda.empty_cache()
 
     return memory
@@ -152,8 +149,8 @@ def compute_complexity(model, input_size, batch_size=64):
     model.start_flops_count()
 
     with torch.no_grad():
-        _ = model(torch.randn(batch_size, *
-                        input_size).cuda(non_blocking=True))
+        x = torch.randn(batch_size, *input_size).cuda(non_blocking=True)
+        _ = model(x)
 
     return model.compute_average_flops_cost() / 1e9 / 2
 

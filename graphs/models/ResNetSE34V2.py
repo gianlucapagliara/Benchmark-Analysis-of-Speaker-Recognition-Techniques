@@ -80,6 +80,7 @@ class ResNetSE34V2(VoxModel):
         return out
 
     def forward(self, x):
+        x = self.preforward(x)
 
         with torch.no_grad():
             with torch.cuda.amp.autocast(enabled=False):

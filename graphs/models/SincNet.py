@@ -66,12 +66,20 @@ class SincNet(BaseModel):
         if state_dict.get('DNN2_model_par', '') != '':
             self.DNN2_net.load_state_dict(state_dict['DNN2_model_par'])
 
-    def preforward(self, x):
-        x = x.squeeze(0)
-        return x
+    def scoring(self, ref, com, normalize=False):
+        # Feature extraction
+        ref_feat = self.get_dvect(ref).to(self.device)
+        com_feat = self.get_dvect(com).to(self.device)
 
-    def forward(self, x):
-        signal = self.preforward(x)
+        # Distance
+        score = F.pairwise_distance(ref_feat, com_feat)
+        score = score.detach().cpu().numpy()
+        score = -1 * np.mean(score)
+
+        return score
+
+    def get_dvect(self, signal):
+        signal = signal.squeeze(0)
 
         # split signals into chunks
         beg_samp = 0
@@ -98,7 +106,7 @@ class SincNet(BaseModel):
             if count_fr == self.batch_size:
                 inp = Variable(sig_arr)
                 out = self.DNN1_net(self.CNN_net(inp))
-                dvects[count_fr_tot-self.batch_size:count_fr_tot,:] = out
+                dvects[count_fr_tot-self.batch_size:count_fr_tot, :] = out
                 count_fr = 0
                 sig_arr = torch.zeros([self.batch_size, self.wlen]).float().to(
                     self.device).contiguous()
@@ -106,10 +114,25 @@ class SincNet(BaseModel):
         if count_fr > 0:
             inp = Variable(sig_arr[:count_fr])
             out = self.DNN1_net(self.CNN_net(inp))
-            dvects[count_fr_tot-count_fr-1:count_fr_tot,:] = out
+            dvects[count_fr_tot-count_fr-1:count_fr_tot, :] = out
 
         # averaging and normalizing all the d-vectors
-        d_vect_out = torch.mean(dvects/dvects.norm(p=2, dim=1).view(-1, 1), dim=0)
+        d_vect_out = torch.mean(
+            dvects/dvects.norm(p=2, dim=1).view(-1, 1), dim=0)
 
         d_vect_out = d_vect_out.unsqueeze(0)
         return d_vect_out
+
+    def preforward(self, x):
+        if x.shape == 1:
+            x = x.unsqueeze(0)
+        return x
+
+    def forward(self, x):
+        x = self.preforward(x)
+        d_vects = []
+        for i in range(0, x.shape[0]):
+            signal = x[i, :]
+            d_vects.append(self.get_dvect(signal))
+        return d_vects
+

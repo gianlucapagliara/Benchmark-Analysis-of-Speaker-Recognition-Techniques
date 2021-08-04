@@ -3,7 +3,7 @@ import time
 import datetime
 import importlib
 import numpy as np
-import random
+import GPUtil
 
 import torch
 import torch.nn.functional as F
@@ -70,23 +70,24 @@ class Trainer(BaseAgent):
                 self.test_dataset,
                 batch_size=1,
                 num_workers=config.nDataLoaderThread,
-                pin_memory=True, # useful?
+                pin_memory=True,  # useful?
                 shuffle=False,
                 drop_last=False,
                 # sampler=self.test_sampler
             )
             self.test_normalize = False
 
-
+        self.required_memory = GPUtil.getGPUs()[0].memoryUsed
         # Model
         Model = importlib.import_module(
             'graphs.models.' + config.model).__getattribute__(config.model)
         self.__model__ = Model(**vars(config)).to(self.device)
+        self.required_memory = GPUtil.getGPUs()[0].memoryUsed - self.required_memory
 
         # Checkpoint Loading (if not found start from scratch)
         if(self.config.get('checkpoint_file', "") != ""):
             self.load_checkpoint(self.config.checkpoint_file)
-        
+
         # Model Loading (if not found start from scratch)
         if(self.config.get('initial_model', "") != ""):
             self.load_parameters(self.config.initial_model)
@@ -97,7 +98,6 @@ class Trainer(BaseAgent):
                 'graphs.losses.'+config.loss_function).__getattribute__('LossFunction')
             self.__loss__ = LossFunction(**vars(config)).to(self.device)
             self.test_normalize = self.__loss__.test_normalize
-
 
             # Optimizer
             Optimizer = importlib.import_module(
@@ -146,12 +146,12 @@ class Trainer(BaseAgent):
 
     def load_parameters(self, path):
         loaded_state = torch.load(path, map_location="cuda:%d" % self.gpu)
-        
+
         if loaded_state.get('state_dict', "") != "":
-            loaded_state=loaded_state['state_dict']
+            loaded_state = loaded_state['state_dict']
 
         self.__model__.load_state_dict(loaded_state)
-        
+
     def save_checkpoint(self, file_name="checkpoint.pth.tar", is_best=0):
         state = {
             'epoch': self.current_epoch,
@@ -192,21 +192,27 @@ class Trainer(BaseAgent):
         self.logger.info('Computing memory usage...')
         memory = compute_memory_usage(self.__model__, input_size)
 
-        self.logger.info('================================================================')
+        self.logger.info(
+            '================================================================')
         self.logger.info(
             str(self.__model__.__class__).split('.')[-1].split("'")[0])
-        self.logger.info('================================================================')
+        self.logger.info(
+            '================================================================')
         self.logger.info('Total params: ' + str(total_params))
         self.logger.info('Trainable params: ' + str(trainable_params))
-        self.logger.info('Non-trainable params: ' + str(total_params - trainable_params))
-        self.logger.info('----------------------------------------------------------------')
+        self.logger.info('Non-trainable params: ' +
+                         str(total_params - trainable_params))
+        self.logger.info(
+            '----------------------------------------------------------------')
         self.logger.info(f'Average flops cost: {avg_flops_cost}')
-        self.logger.info('----------------------------------------------------------------')
+        self.logger.info(
+            '----------------------------------------------------------------')
         self.logger.info('Average inference time for every batch size:')
         batch_sizes = [1, 2, 4, 8, 16, 32, 64]
         for b, m, s in zip(batch_sizes, mean_tfp, std_tfp):
             self.logger.info(f'{b}: {m:.2f} +/- {s:.2f}')
-        self.logger.info('----------------------------------------------------------------')
+        self.logger.info(
+            '----------------------------------------------------------------')
         self.logger.info('Memory usage for every batch size:')
         batch_sizes = [1, 2, 4, 8, 16, 32, 64]
         for b, m in zip(batch_sizes, memory):
@@ -355,7 +361,7 @@ class Trainer(BaseAgent):
                 mindcf, threshold = ComputeMinDcf(
                     fnrs, fprs, thresholds, p_target, c_miss, c_fa)
                 eer = result[1]
-            
+
             process_time = time.time()-start_time-loop_time
 
             # Logging
@@ -363,7 +369,7 @@ class Trainer(BaseAgent):
             perc_proc = process_time/total*100
 
             tqdm_test.set_description("Epoch-{} Validation | VEER {:2.4f}% MDC {:2.5f} | Efficiency {:2.2f}% "
-                                        .format(self.current_epoch+1, eer, mindcf, perc_proc))
+                                      .format(self.current_epoch+1, eer, mindcf, perc_proc))
 
             start_time = time.time()
 

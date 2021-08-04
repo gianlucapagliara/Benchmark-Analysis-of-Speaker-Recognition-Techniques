@@ -77,10 +77,6 @@ class AutoSpeechModel(BaseModel):
         super(AutoSpeechModel, self).load_state_dict(new_state_dict)
 
     def scoring(self, ref, com, normalize=False):
-        # Data shape preparation
-        ref = ref.squeeze(0)
-        com = com.squeeze(0)
-
         # Feature extraction
         ref_feat = self(ref).to(self.device)
         com_feat = self(com).to(self.device)

@@ -1,5 +1,5 @@
 {
-    "exp_name": "ResNetSE34L Pretrained",
+    "exp_name": "ResNetSE34V2 Pretrained",
     "agent": "",
     "verbose": false,
     "seed": 1337,
@@ -7,16 +7,16 @@
     "cuda": true,
     "gpu_device": 0,
     
-    "model": "ResNetSE34L",
+    "model": "ResNetSE34V2",
     "checkpoint_file": "",
-    "initial_model": "pretrained_weights/baseline_lite_ap.model",
-    "n_mels": 40,
-    "encoder_type": "SAP",
+    "initial_model": "pretrained_weights/baseline_v2_ap.model",
+    "n_mels": 64,
+    "encoder_type": "ASP",
     "nOut": 512,
     "checkpoint_dir": "",
     "summary_dir": "",
     
-    "loss_function": "angleproto",
+    "loss_function": "softmaxproto",
     "hard_prob": 0.5,
     "hard_rank": 10,
     "margin": 0.1,
