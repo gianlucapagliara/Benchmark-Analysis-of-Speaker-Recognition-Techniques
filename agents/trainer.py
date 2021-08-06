@@ -41,7 +41,7 @@ class Trainer(BaseAgent):
             self.logger.info("Operation will be on ***** CPU ***** ")
         self.gpu = config.gpu_device
         self.config.device = self.device
-        self.print_metrics = self.config.get('print_metrics', False)
+        self.print_metrics = self.config.get('print_metrics', True)
 
         # Datasets
         self.to_train = config.train
@@ -183,13 +183,10 @@ class Trainer(BaseAgent):
             'metrics_batches', '') else [1, 2, 4, 8, 16, 32, 64]
         input_size = next(iter(self.test_loader))[0].shape
 
-        self.logger.info('Computing parameters...')
+        self.logger.info('Computing metrics...')
         total_params, trainable_params = compute_parameters(self.__model__)
-        self.logger.info('Computing complexity...')
         avg_flops_cost = compute_complexity(self.__model__, input_size)
-        self.logger.info('Computing mean inference time...')
         mean_tfp, std_tfp = compute_inference_time(self.__model__, input_size)
-        self.logger.info('Computing memory usage...')
         memory = compute_memory_usage(self.__model__, input_size)
 
         self.logger.info(
