@@ -1,9 +1,7 @@
 import torch
 import numpy as np
 import time
-import GPUtil
-from utils.complexity_utils import add_flops_counting_methods, summary
-import copy
+from ptflops import get_model_complexity_info
 
 class AverageMeter:
     """
@@ -83,53 +81,55 @@ def accuracy(output, target, topk=(1,)):
 
 def compute_memory_usage(model, input_size, batch_sizes=[1, 2, 4, 8, 16, 32, 64], model_memory=0):
     memory = []
-    gpu = GPUtil.getGPUs()[0]
-    empty_gpu = gpu.memoryUsed
+    torch.cuda.reset_peak_memory_stats()
+    # empty_gpu = torch.cuda.memory_stats(model.device)['active.all.current']
 
     for i, bs in enumerate(batch_sizes):
         with torch.no_grad():
-            _ = model(torch.randn(
-                bs, *input_size).cuda(non_blocking=True))
-
-        memory.append(model_memory + gpu.memoryUsed-empty_gpu)
+            inp = torch.randn(bs, *input_size).cuda(non_blocking=False)
+            _ = model(inp)
+            # current_memory = torch.cuda.memory_stats(
+                # model.device)['active.all.current']
+            # memory.append(model_memory + current_memory-empty_gpu)
+            current_memory = torch.cuda.memory_stats(
+                model.device)['allocated_bytes.all.peak'] / (1024**3)
+            memory.append(current_memory)
+            torch.cuda.reset_peak_memory_stats()
     torch.cuda.empty_cache()
 
     return memory
 
 
 def measure(model, x):
-	# synchronize gpu time and measure fp
-	torch.cuda.synchronize()
-	t0 = time.time()
-	with torch.no_grad():
-		y_pred = model(x)
-	torch.cuda.synchronize()
-	elapsed_fp = time.time() - t0
+    # synchronize gpu time and measure fp
+    torch.cuda.synchronize()
+    t0 = time.time()
+    with torch.no_grad():
+        y_pred = model(x)
+    torch.cuda.synchronize()
+    elapsed_fp = time.time() - t0
 
-	return elapsed_fp
+    return elapsed_fp
 
 
 def benchmark(model, x):
-	# transfer the model on GPU
-	model = model.cuda().eval()
+    # DRY RUNS
+    for i in range(10):
+        _ = measure(model, x)
 
-	# DRY RUNS
-	for i in range(10):
-		_ = measure(model, x)
+    # print('DONE WITH DRY RUNS, NOW BENCHMARKING')
 
-	# print('DONE WITH DRY RUNS, NOW BENCHMARKING')
+    # START BENCHMARKING
+    t_forward = []
+    t_backward = []
+    for i in range(10):
+        t_fp = measure(model, x)
+        t_forward.append(t_fp)
 
-	# START BENCHMARKING
-	t_forward = []
-	t_backward = []
-	for i in range(10):
-		t_fp = measure(model, x)
-		t_forward.append(t_fp)
+    torch.cuda.empty_cache()
 
-	# free memory
-	del model
+    return t_forward
 
-	return t_forward
 
 def compute_inference_time(model, input_size, batch_sizes=[1, 2, 4, 8, 16, 32, 64]):
     mean_tfp = []
@@ -143,16 +143,15 @@ def compute_inference_time(model, input_size, batch_sizes=[1, 2, 4, 8, 16, 32, 6
 
     return mean_tfp, std_tfp
 
-def compute_complexity(model, input_size, batch_size=64):
-    model = model.cuda().eval()
-    model = add_flops_counting_methods(model)
-    model.start_flops_count()
 
-    with torch.no_grad():
-        x = torch.randn(batch_size, *input_size).cuda(non_blocking=True)
-        _ = model(x)
+def input_constructor(input_res):
+    return {'x': torch.randn(*input_res).cuda()}
 
-    return model.compute_average_flops_cost() / 1e9 / 2
+def compute_complexity(model, input_size, batch_size=1):
+    macs, params = get_model_complexity_info(model, (batch_size, *input_size),
+            input_constructor=input_constructor, as_strings=True, verbose=False, print_per_layer_stat=False)
+
+    return macs
 
 
 def compute_parameters(model):

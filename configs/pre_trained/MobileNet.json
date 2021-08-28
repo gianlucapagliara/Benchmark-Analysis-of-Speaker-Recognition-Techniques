@@ -1,5 +1,5 @@
 {
-    "exp_name": "SincNet Pretrained",
+    "exp_name": "MobileNet Pretrained",
     "agent": "",
     "verbose": false,
     "seed": 1337,
@@ -9,7 +9,7 @@
     
     "model": "MobileNetV2",
     "checkpoint_dir": "",
-    "checkpoint_file": "",
+    "checkpoint_file": "pretrained_weights/MobileNet_128.pkl",
     "initial_model": "",
     "summary_dir": "",
     

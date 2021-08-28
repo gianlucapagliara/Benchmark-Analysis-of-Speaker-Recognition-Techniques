@@ -113,8 +113,8 @@ class AutoSpeech(AutoSpeechModel):
     self.classifier = nn.Linear(C_prev, num_classes)
     self.drop_path_prob = drop_path_prob
 
-  def forward(self, input):
-    input = input.unsqueeze(1)
+  def forward(self, x):
+    input = x.unsqueeze(1)
     s0 = self.stem0(input)
     s1 = self.stem1(s0)
     for i, cell in enumerate(self.cells):

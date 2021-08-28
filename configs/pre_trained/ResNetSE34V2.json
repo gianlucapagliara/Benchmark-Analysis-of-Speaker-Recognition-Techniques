@@ -50,6 +50,7 @@
     "print_interval": 100,
     "test_interval": 10,
     "num_eval": 10,
+    "metrics_batches": [1, 2, 4, 8, 16, 32],
 
     "mixedprec": false,
     "distributed": false,

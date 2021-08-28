@@ -1,0 +1,104 @@
+import time
+import importlib
+
+import torch
+
+from agents.base import NNAgent
+from utils.metrics import *
+from utils.tuneThreshold import tuneThresholdfromScore, ComputeErrorRates, ComputeMinDcf
+
+from tqdm import tqdm
+
+
+class Tester(NNAgent):
+    def __init__(self, config):
+        super().__init__(config)
+
+        # Dataset
+        TestDataset = importlib.import_module(
+            'datasets.' + config.test_dataset).__getattribute__(config.test_dataset)
+        self.test_dataset = TestDataset(**vars(config))
+        self.loader = torch.utils.data.DataLoader(
+            self.test_dataset,
+            batch_size=1,
+            num_workers=config.nDataLoaderThread,
+            pin_memory=True,  # useful?
+            shuffle=False,
+            drop_last=False,
+            # sampler=self.test_sampler
+        )
+        self.test_normalize = False
+
+    def run(self):
+        try:
+            if self.print_metrics:
+                self.get_metrics()
+            self.validate()
+        except KeyboardInterrupt:
+            self.logger.info("You have entered CTRL+C... Wait to finalize.")
+
+    def validate(self):
+        self.__model__.eval()
+
+        all_scores = []
+        all_labels = []
+
+        eer = 0
+        mindcf = 0
+
+        total_iterations = len(self.loader)
+        current_iteration = 0
+        start_time = time.time()
+
+        tqdm_test = tqdm(self.loader, total=len(
+            self.loader), desc="Epoch {}".format(self.current_epoch+1))
+        for ref, com, label in tqdm_test:
+            current_iteration += 1
+
+            loop_time = time.time()-start_time
+
+            ref = ref.to(self.device)
+            com = com.to(self.device)
+            label = int(label.data.cpu().numpy()[0])
+            with torch.no_grad():
+                score = self.__model__.scoring(
+                    ref, com, normalize=self.test_normalize)
+
+            all_scores.append(score)
+            all_labels.append(label)
+
+            # if(current_iteration==1):
+            #     print(score)
+
+            if (current_iteration % self.config.print_interval == 0) or (current_iteration == total_iterations):
+                result = tuneThresholdfromScore(
+                    all_scores, all_labels, [1, 0.1])
+                p_target = 0.05
+                c_miss = 1
+                c_fa = 1
+                fnrs, fprs, thresholds = ComputeErrorRates(
+                    all_scores, all_labels)
+                mindcf, threshold = ComputeMinDcf(
+                    fnrs, fprs, thresholds, p_target, c_miss, c_fa)
+                eer = result[1]
+
+            process_time = time.time()-start_time-loop_time
+
+            # Logging
+            total = process_time+loop_time
+            perc_proc = process_time/total*100
+
+            tqdm_test.set_description("Epoch-{} Validation | VEER {:2.4f}% MDC {:2.5f} | Efficiency {:2.2f}% "
+                                      .format(self.current_epoch+1, eer, mindcf, perc_proc))
+
+            start_time = time.time()
+
+        validation_time = tqdm_test.format_dict['elapsed']
+        validation_rate = total_iterations / validation_time
+
+        tqdm_test.close()
+
+        self.logger.info("Validation at epoch-{} completed in {:2.1f}s ({:2.1f}samples/s). VEER {:2.4f}% MDC {:2.5f} ".format(
+            self.current_epoch+1, validation_time, validation_rate, eer, mindcf))
+
+        return eer
