@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
@@ -35,14 +36,15 @@ class BaseModel(nn.Module):
                 if name not in self_state:
                     print("{} is not in the model.".format(origname))
                     continue
-
-            if self_state[name].size() != state_dict[origname].size():
+            
+            if self_state[name].size() != param.size():
                 print("Wrong parameter length: {}, model: {}, loaded: {}".format(
-                    origname, self_state[name].size(), state_dict[origname].size()))
+                    origname, self_state[name].size(), param.size()))
                 continue
 
             self_state[name].copy_(param)
 
+        super(BaseModel, self).load_state_dict(self_state)
 
     def scoring(self, ref, com, normalize=False):
         # Feature extraction

@@ -3,12 +3,124 @@ import torchaudio
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
-from graphs.models.base import VoxModel
+from graphs.models.base import VoxModel, BaseModel
+
+
+class ConvBnPool(nn.Module):
+    def __init__(self, in_channels, out_channels, conv_kernel_size, conv_strides, conv_pad,
+                 pool_type='', pool_size=(2, 2), pool_strides=None, layer_idx='', conv_layer_prefix='conv'):
+        super(ConvBnPool, self).__init__()
+
+        self.layer_idx = layer_idx
+        self.conv_layer_prefix = conv_layer_prefix
+
+        self.add_module(f'pad{layer_idx}', nn.ZeroPad2d(padding=conv_pad))
+        self.add_module(f'{conv_layer_prefix}{layer_idx}', nn.Conv2d(
+            in_channels, out_channels, kernel_size=conv_kernel_size, stride=conv_strides, padding='valid'))
+        self.add_module(f'norm{layer_idx}', nn.BatchNorm2d(
+            num_features=out_channels, eps=1e-5, momentum=1))
+        self.add_module(f'relu{layer_idx}', nn.ReLU())
+        if pool_type == 'max':
+            self.add_module(f'pool{layer_idx}', nn.MaxPool2d(
+                kernel_size=pool_size, stride=pool_strides))
+        elif pool_type == 'avg':
+            self.add_module(f'pool{layer_idx}', nn.AvgPool2d(
+                kernel_size=pool_size, stride=pool_strides))
+
+    def forward(self, x):
+        x = self.get_submodule(f'pad{self.layer_idx}')(x)
+        x = self.get_submodule(f'{self.conv_layer_prefix}{self.layer_idx}')(x)
+        x = self.get_submodule(f'norm{self.layer_idx}')(x)
+        x = self.get_submodule(f'relu{self.layer_idx}')(x)
+        try:
+            x = self.get_submodule(f'pool{self.layer_idx}')(x)
+        except:
+            pass
+
+        return x
+
+
+class ConvBnDynamicAPool(nn.Module):
+    def __init__(self, in_channels, out_channels, conv_kernel_size, conv_strides, conv_pad, layer_idx='', conv_layer_prefix='conv'):
+        super(ConvBnDynamicAPool, self).__init__()
+        self.layer_idx = layer_idx
+        self.conv_layer_prefix = conv_layer_prefix
+
+        self.add_module(f'pad{self.layer_idx}', nn.ZeroPad2d(padding=conv_pad))
+        self.add_module(f'{self.conv_layer_prefix}{self.layer_idx}', nn.Conv2d(
+            in_channels, out_channels, kernel_size=conv_kernel_size, stride=conv_strides, padding='valid'))
+        self.add_module(f'norm{self.layer_idx}', nn.BatchNorm2d(
+            num_features=out_channels, eps=1e-5, momentum=1))
+        self.add_module(f'relu{self.layer_idx}', nn.ReLU())
+
+    def forward(self, x):
+        x = self.get_submodule(f'pad{self.layer_idx}')(x)
+        x = self.get_submodule(f'{self.conv_layer_prefix}{self.layer_idx}')(x)
+        x = self.get_submodule(f'norm{self.layer_idx}')(x)
+        x = self.get_submodule(f'relu{self.layer_idx}')(x)
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        # x = x.view(shape)
+
+        return x
 
 
 class VGGVox(VoxModel):
     def __init__(self, device, nOut=1024, encoder_type='SAP', log_input=True, **kwargs):
         super(VGGVox, self).__init__(device)
+
+        self.log_input = log_input
+        self.encoder_type = encoder_type
+
+        self.conv1 = ConvBnPool(in_channels=1, out_channels=96, conv_kernel_size=(7, 7), conv_strides=(2, 2), conv_pad=(1, 1, 1, 1),
+                                pool_type='max', pool_size=(3, 3), pool_strides=(2, 2))
+        self.conv2 = ConvBnPool(in_channels=96, out_channels=256, conv_kernel_size=(5, 5), conv_strides=(2, 2), conv_pad=(1, 1, 1, 1),
+                                pool_type='max', pool_size=(3, 3), pool_strides=(2, 2))
+        self.conv3 = ConvBnPool(in_channels=256, out_channels=384, conv_kernel_size=(
+            3, 3), conv_strides=(1, 1), conv_pad=(1, 1, 1, 1))
+        self.conv4 = ConvBnPool(in_channels=384, out_channels=256, conv_kernel_size=(
+            3, 3), conv_strides=(1, 1), conv_pad=(1, 1, 1, 1))
+        self.conv5 = ConvBnPool(in_channels=256, out_channels=256, conv_kernel_size=(3, 3), conv_strides=(1, 1), conv_pad=(1, 1, 1, 1),
+                                pool_type='max', pool_size=(5, 3), pool_strides=(3, 2))
+        self.fc6 = ConvBnDynamicAPool(in_channels=256, out_channels=4096, conv_kernel_size=(
+            1, 9), conv_strides=(1, 1), conv_pad=(0, 0, 0, 0))
+        self.fc7 = ConvBnPool(in_channels=4096, out_channels=1024, conv_kernel_size=(
+            1, 1), conv_strides=(1, 1), conv_pad=(0, 0, 0, 0))
+        
+        self.fc8 = nn.Conv2d(in_channels=1024, out_channels=nOut,
+                             kernel_size=(1, 1), stride=(1, 1), padding='valid')
+
+        self.torchfb = torchaudio.transforms.Spectrogram(
+            n_fft=512, win_length=400, hop_length=160, pad=0, window_fn=torch.hamming_window, normalized=True).to(self.device)
+        
+    def forward(self, x):
+        x = self.preforward(x)
+        
+        with torch.no_grad():
+            with torch.cuda.amp.autocast(enabled=False):
+                x = x.to(self.device)
+                x = self.torchfb(x)+1e-6
+                if self.log_input:
+                    x = x.log()
+                x = x.unsqueeze(1)
+
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.fc6(x)
+        x = self.fc7(x)
+
+        x = F.normalize(x, p=2, dim=1)
+        
+        x = self.fc8(x)
+
+        return x
+
+
+class VGGVoxM(VoxModel):
+    def __init__(self, device, nOut=1024, encoder_type='SAP', log_input=True, **kwargs):
+        super(VGGVoxM, self).__init__(device)
 
         self.encoder_type = encoder_type
         self.log_input = log_input
