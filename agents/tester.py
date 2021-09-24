@@ -2,6 +2,7 @@ import time
 import importlib
 
 import torch
+import torch.nn.functional as F
 
 from agents.base import NNAgent
 from utils.metrics import *
@@ -27,7 +28,7 @@ class Tester(NNAgent):
             drop_last=False,
             # sampler=self.test_sampler
         )
-        self.test_normalize = False
+        self.test_normalize = self.config.get('test_normalize', True)
 
     def run(self):
         try:
@@ -57,21 +58,22 @@ class Tester(NNAgent):
 
             loop_time = time.time()-start_time
 
-            ref = ref.to(self.device)
-            com = com.to(self.device)
             label = int(label.data.cpu().numpy()[0])
             with torch.no_grad():
-                score = self.__model__.scoring(
-                    ref, com, normalize=self.test_normalize)
+                # Feature extraction
+                ref_feat = self.__model__.get_feat(ref, self.test_normalize)
+                com_feat = self.__model__.get_feat(com, self.test_normalize)
+
+                # Scoring by distance
+                score = F.pairwise_distance(ref_feat, com_feat)
+                score = score.detach().cpu().numpy()
+                score = -1 * np.mean(score)
 
             all_scores.append(score)
             all_labels.append(label)
 
-            # if(current_iteration==1):
-            #     print(score)
-
             if (current_iteration % self.config.print_interval == 0) or (current_iteration == total_iterations):
-                result = tuneThresholdfromScore(
+                tunedThreshold, eer, fpr, fnr = tuneThresholdfromScore(
                     all_scores, all_labels, [1, 0.1])
                 p_target = 0.05
                 c_miss = 1
@@ -80,7 +82,6 @@ class Tester(NNAgent):
                     all_scores, all_labels)
                 mindcf, threshold = ComputeMinDcf(
                     fnrs, fprs, thresholds, p_target, c_miss, c_fa)
-                eer = result[1]
 
             process_time = time.time()-start_time-loop_time
 

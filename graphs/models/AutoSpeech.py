@@ -114,6 +114,8 @@ class AutoSpeech(AutoSpeechModel):
     self.drop_path_prob = drop_path_prob
 
   def forward(self, x):
+    x = self.preforward(x)
+
     input = x.unsqueeze(1)
     s0 = self.stem0(input)
     s1 = self.stem1(s0)

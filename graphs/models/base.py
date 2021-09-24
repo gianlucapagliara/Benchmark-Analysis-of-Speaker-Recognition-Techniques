@@ -12,8 +12,28 @@ class BaseModel(nn.Module):
         super(BaseModel, self).__init__()
         self.device = device
         self = self.to(self.device)
+    
+    def load_state_dict(self, state_dict):
+        self_state = self.state_dict()
+
+        for name, param in state_dict.items():
+            origname = name
+            if name not in self_state:
+                if name not in self_state:
+                    print("{} is not in the model.".format(origname))
+                    continue
+
+            if self_state[name].size() != param.size():
+                print("Wrong parameter length: {}, model: {}, loaded: {}".format(
+                    origname, self_state[name].size(), param.size()))
+                continue
+
+            self_state[name].copy_(param)
+
+        super(BaseModel, self).load_state_dict(self_state)
 
     def preforward(self, x):
+        x = x.to(self.device)
         return x
 
     def forward(self, x):
@@ -27,50 +47,13 @@ class BaseModel(nn.Module):
 
         return nloss, prec1
 
-    def load_state_dict(self, state_dict):
-        self_state = self.state_dict()
-
-        for name, param in state_dict.items():
-            origname = name
-            if name not in self_state:
-                if name not in self_state:
-                    print("{} is not in the model.".format(origname))
-                    continue
-            
-            if self_state[name].size() != param.size():
-                print("Wrong parameter length: {}, model: {}, loaded: {}".format(
-                    origname, self_state[name].size(), param.size()))
-                continue
-
-            self_state[name].copy_(param)
-
-        super(BaseModel, self).load_state_dict(self_state)
-
-    def scoring(self, ref, com, normalize=False):
-        # Feature extraction
+    def get_feat(self, ref, normalize=True):
         ref_feat = self(ref).to(self.device)
-        com_feat = self(com).to(self.device)
+        ref_feat = F.normalize(ref_feat, p=2, dim=1) if normalize else ref_feat
 
-        # print(f'Ref: {ref_feat.shape}')
-        # print(ref_feat.data)
-        # print(f'Com: {com_feat.shape}')
-        # print(com_feat.data)
-
-        # Distance
-        score = F.pairwise_distance(ref_feat, com_feat)
-        score = score.detach().cpu().numpy()
-        score = -1 * np.mean(score)
-
-        return score
-
+        return ref_feat
 
 class AutoSpeechModel(BaseModel):
-    def __init__(self, device):
-        super(AutoSpeechModel, self).__init__(device)
-
-    def forward(self, x):
-        return super(AutoSpeechModel, self).forward(self, x)
-
     def load_state_dict(self, state_dict):
         new_state_dict = {}
         for name in state_dict.keys():
@@ -78,26 +61,13 @@ class AutoSpeechModel(BaseModel):
             new_state_dict[new_name] = state_dict[name]
         super(AutoSpeechModel, self).load_state_dict(new_state_dict)
 
-    def scoring(self, ref, com, normalize=False):
-        # Feature extraction
-        ref_feat = self(ref).to(self.device)
-        com_feat = self(com).to(self.device)
-
-        ref_feat = ref_feat.mean(dim=0).unsqueeze(0)
-        com_feat = com_feat.mean(dim=0).unsqueeze(0)
-
-        # Distance
-        score = F.cosine_similarity(ref_feat, com_feat)
-        score = score.data.cpu().numpy()[0]
-        # score = F.pairwise_distance(ref_feat, com_feat)
-        # score = -1 * score.data.cpu().numpy()[0]
-
-        return score
-
-
 class VoxModel(BaseModel):
-    def __init__(self, device):
-        super(VoxModel, self).__init__(device)
+    def load_state_dict(self, state_dict):
+        new_state_dict = {}
+        for name in state_dict.keys():
+            new_name = name.replace("__S__.", "")
+            new_state_dict[new_name] = state_dict[name]
+        super(VoxModel, self).load_state_dict(new_state_dict)
 
     def preforward(self, x):
         x = x.reshape(-1, x.size()[-1]).to(self.device)
@@ -111,31 +81,3 @@ class VoxModel(BaseModel):
         nloss, prec1 = loss.forward(x, label)
 
         return nloss, prec1
-
-    def load_state_dict(self, state_dict):
-        new_state_dict = {}
-        for name in state_dict.keys():
-            new_name = name.replace("__S__.", "")
-            new_state_dict[new_name] = state_dict[name]
-        super(VoxModel, self).load_state_dict(new_state_dict)
-
-    def scoring(self, ref, com, normalize=False):
-        # Feature extraction
-        ref_feat = self(ref).to(self.device)
-        com_feat = self(com).to(self.device)
-
-        # Normalization
-        if normalize:
-            ref_feat = F.normalize(ref_feat, p=2, dim=1)
-            com_feat = F.normalize(com_feat, p=2, dim=1)
-
-        # is it usefull?
-        ref_feat = ref_feat.unsqueeze(-1)
-        com_feat = com_feat.unsqueeze(-1).transpose(0, 2)
-
-        # Distance
-        score = F.pairwise_distance(ref_feat, com_feat)
-        score = score.detach().cpu().numpy()
-        score = -1 * np.mean(score)
-
-        return score

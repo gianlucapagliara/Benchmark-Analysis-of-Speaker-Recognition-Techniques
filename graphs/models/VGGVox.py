@@ -2,8 +2,7 @@ import torch
 import torchaudio
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import Parameter
-from graphs.models.base import VoxModel, BaseModel
+from graphs.models.base import BaseModel, VoxModel
 
 
 class ConvBnPool(nn.Module):
@@ -59,17 +58,15 @@ class ConvBnDynamicAPool(nn.Module):
         x = self.get_submodule(f'norm{self.layer_idx}')(x)
         x = self.get_submodule(f'relu{self.layer_idx}')(x)
         x = F.adaptive_avg_pool2d(x, (1, 1))
-        # x = x.view(shape)
 
         return x
 
 
-class VGGVox(VoxModel):
-    def __init__(self, device, nOut=1024, encoder_type='SAP', log_input=True, **kwargs):
+class VGGVox(BaseModel):
+    def __init__(self, device, nOut=1024, **kwargs):
         super(VGGVox, self).__init__(device)
 
-        self.log_input = log_input
-        self.encoder_type = encoder_type
+        # Input: (batch_size, channel, FFT, width) -> (batch_size, 1, 512, width)
 
         self.conv1 = ConvBnPool(in_channels=1, out_channels=96, conv_kernel_size=(7, 7), conv_strides=(2, 2), conv_pad=(1, 1, 1, 1),
                                 pool_type='max', pool_size=(3, 3), pool_strides=(2, 2))
@@ -82,27 +79,16 @@ class VGGVox(VoxModel):
         self.conv5 = ConvBnPool(in_channels=256, out_channels=256, conv_kernel_size=(3, 3), conv_strides=(1, 1), conv_pad=(1, 1, 1, 1),
                                 pool_type='max', pool_size=(5, 3), pool_strides=(3, 2))
         self.fc6 = ConvBnDynamicAPool(in_channels=256, out_channels=4096, conv_kernel_size=(
-            1, 9), conv_strides=(1, 1), conv_pad=(0, 0, 0, 0))
+            9, 1), conv_strides=(1, 1), conv_pad=(0, 0, 0, 0))
         self.fc7 = ConvBnPool(in_channels=4096, out_channels=1024, conv_kernel_size=(
             1, 1), conv_strides=(1, 1), conv_pad=(0, 0, 0, 0))
         
         self.fc8 = nn.Conv2d(in_channels=1024, out_channels=nOut,
                              kernel_size=(1, 1), stride=(1, 1), padding='valid')
 
-        self.torchfb = torchaudio.transforms.Spectrogram(
-            n_fft=512, win_length=400, hop_length=160, pad=0, window_fn=torch.hamming_window, normalized=True).to(self.device)
-        
     def forward(self, x):
-        x = self.preforward(x)
+        x = x.reshape(1, *x.shape).to(self.device)
         
-        with torch.no_grad():
-            with torch.cuda.amp.autocast(enabled=False):
-                x = x.to(self.device)
-                x = self.torchfb(x)+1e-6
-                if self.log_input:
-                    x = x.log()
-                x = x.unsqueeze(1)
-
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
@@ -110,10 +96,9 @@ class VGGVox(VoxModel):
         x = self.conv5(x)
         x = self.fc6(x)
         x = self.fc7(x)
-
-        x = F.normalize(x, p=2, dim=1)
-        
         x = self.fc8(x)
+        
+        x = x.squeeze(-1).squeeze(-1).unsqueeze(0)
 
         return x
 
