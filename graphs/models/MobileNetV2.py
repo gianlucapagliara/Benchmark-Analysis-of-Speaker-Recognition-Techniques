@@ -103,7 +103,8 @@ class MobileNetV2(BaseModel):
                 nn.init.zeros_(m.bias)
 
     def forward(self, x):
-
+        x = self.preforward(x)
+        
         if(len(x.shape) == 2):
             # x = self.normalize(x) # FIXME: doesn't work, for the fixed 6420 on nn.BatchNorm1d(6420)
             x = x.reshape([x.shape[0], 1, x.shape[1]])

@@ -1,5 +1,6 @@
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
+
 from graphs.models.base import BaseModel
 from graphs.models.SincNetBlocks import *
 
@@ -66,17 +67,10 @@ class SincNet(BaseModel):
         if state_dict.get('DNN2_model_par', '') != '':
             self.DNN2_net.load_state_dict(state_dict['DNN2_model_par'])
 
-    def scoring(self, ref, com, normalize=False):
-        # Feature extraction
+    def get_feat(self, ref, normalize=True):
         ref_feat = self.get_dvect(ref).to(self.device)
-        com_feat = self.get_dvect(com).to(self.device)
 
-        # Distance
-        score = F.pairwise_distance(ref_feat, com_feat)
-        score = score.detach().cpu().numpy()
-        score = -1 * np.mean(score)
-
-        return score
+        return ref_feat
 
     def get_dvect(self, signal):
         signal = signal.squeeze(0)
@@ -124,6 +118,7 @@ class SincNet(BaseModel):
         return d_vect_out
 
     def preforward(self, x):
+        super(SincNet, self).preforward(x)
         if x.shape == 1:
             x = x.unsqueeze(0)
         return x

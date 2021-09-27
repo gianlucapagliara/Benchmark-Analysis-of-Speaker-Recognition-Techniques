@@ -18,17 +18,21 @@
 
     "nDataLoaderThread": 1,
 
-    "train": false,
-
     "test": true,
-    "test_dataset": "AutoSpeechTestset",
+    "test_dataset": "VoxCeleb1",
     "test_list": "data/test_list.txt",
-    "test_path": "data/voxceleb1/",
-    "eval_frames": 300,
+    "test_path": "data/voxceleb1/test/wav/",
     "print_interval": 100,
-    "test_interval": 10,
+    
+    "preprocessing_function": "autospeech_preprocessing",
+    "window_length": 25,
+    "window_step": 10,
+    "n_fft": 512,
+    "sampling_rate": 16000,
     "partial_n_frames": 300,
-    "num_eval": 10,
+    "audio_norm_target_dBFS": -30,
+    "mean_file": "data/voxceleb1/mean.npy",
+    "std_file": "data/voxceleb1/std.npy",   
 
     "mixedprec": false,
     "distributed": false,

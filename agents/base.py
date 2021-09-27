@@ -65,6 +65,12 @@ class NNAgent(BaseAgent):
         self.__model__ = Model(**vars(config)).to(self.device)
         self.required_memory = torch.cuda.memory_stats(self.device)['active.all.current'] - self.required_memory
 
+        if(self.config.get('preprocessing_function', '') != ""):
+            self.config.preprocessing_function = importlib.import_module(
+                'datasets.preprocessing.functions').__getattribute__(self.config.preprocessing_function)
+        else:
+            self.config.preprocessing_function = None
+
         # Checkpoint Loading (if not found start from scratch)
         if(self.config.get('checkpoint_file', "") != ""):
             self.load_checkpoint(self.config.checkpoint_file)

@@ -15,14 +15,14 @@
     
     "nDataLoaderThread": 1,
     
-    "train": false,
-    
     "test": true,
-    "test_dataset": "Dataset3D",
+    "test_dataset": "VoxCeleb1",
     "test_list": "data/test_list.txt",
     "test_path": "data/voxceleb1/test/wav/",
     "print_interval": 100,
     "test_interval": 10,
+
+    "preprocessing_function": "cnn3d_preprocessing",
     
     "mixedprec": false,
     "distributed": false,

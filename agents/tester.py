@@ -1,12 +1,12 @@
 import time
 import importlib
+import numpy as np
 
 import torch
 import torch.nn.functional as F
 
 from agents.base import NNAgent
-from utils.metrics import *
-from utils.tuneThreshold import tuneThresholdfromScore, ComputeErrorRates, ComputeMinDcf
+from utils.metrics import tuneThresholdfromScore, ComputeErrorRates, ComputeMinDcf
 
 from tqdm import tqdm
 
@@ -17,8 +17,8 @@ class Tester(NNAgent):
 
         # Dataset
         TestDataset = importlib.import_module(
-            'datasets.' + config.test_dataset).__getattribute__(config.test_dataset)
-        self.test_dataset = TestDataset(**vars(config))
+            'datasets.' + config.test_dataset).__getattribute__(self.config.test_dataset)
+        self.test_dataset = TestDataset(**vars(self.config))
         self.loader = torch.utils.data.DataLoader(
             self.test_dataset,
             batch_size=1,

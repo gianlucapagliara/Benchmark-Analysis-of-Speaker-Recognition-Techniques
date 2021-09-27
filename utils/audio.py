@@ -2,71 +2,26 @@ import librosa
 from typing import Optional, Union
 from pathlib import Path
 import numpy as np
-import random
-import soundfile
 import speechpy
+import math
+import logging
+import decimal
+from scipy.signal import lfilter
 
 from tqdm import tqdm
 
-from utils.params import *
+from utils.Speaker import Speaker
 
-# --- Vox functions
+INT16_MAX_VALUE = (2 ** 15) - 1
 
-def loadWAV(filename, max_frames, evalmode=True, num_eval=10):
+def load_wav(fpath, source_sr = None):
+    wav, source_sr = librosa.load(fpath, sr=source_sr, mono=True)
+    wav = wav.flatten()
 
-    # Maximum audio length
-    max_audio = max_frames * 160 + 240
-
-    # Read wav file and convert to torch tensor
-    audio, sample_rate = soundfile.read(filename)
-
-    audiosize = audio.shape[0]
-
-    if audiosize <= max_audio:
-        shortage = max_audio - audiosize + 1
-        audio = np.pad(audio, (0, shortage), 'wrap')
-        audiosize = audio.shape[0]
-
-    if evalmode:
-        startframe = np.linspace(0, audiosize-max_audio, num=num_eval)
-    else:
-        startframe = np.array(
-            [np.int64(random.random()*(audiosize-max_audio))])
-
-    feats = []
-    if evalmode and max_frames == 0:
-        feats.append(audio)
-    else:
-        for asf in startframe:
-            feats.append(audio[int(asf):int(asf)+max_audio])
-
-    feat = np.stack(feats, axis=0).astype(np.float)
-
-    return feat
-
-# --- AutoSpeech audio functions
-
-int16_max = (2 ** 15) - 1
-
-def preprocess_wav(fpath_or_wav: Union[str, Path, np.ndarray],
-                   source_sr: Optional[int] = None):
-    # Load the wav from disk if needed
-    if isinstance(fpath_or_wav, str) or isinstance(fpath_or_wav, Path):
-        wav, source_sr = librosa.load(fpath_or_wav, sr=None)
-    else:
-        wav = fpath_or_wav
-
-    # Resample the wav if needed
-    if source_sr is not None and source_sr != sampling_rate:
-        wav = librosa.resample(wav, source_sr, sampling_rate)
-
-    # Apply the preprocessing: normalize volume and shorten long silences
-    wav = normalize_volume(wav, audio_norm_target_dBFS, increase_only=True)
-
-    return wav
+    return (wav, source_sr)
 
 
-def wav_to_spectrogram(wav):
+def wav_to_spectrogram(wav, n_fft, sampling_rate, window_step, window_length):
     frames = np.abs(librosa.core.stft(
         wav,
         n_fft=n_fft,
@@ -75,87 +30,31 @@ def wav_to_spectrogram(wav):
     ))
     return frames.astype(np.float32).T
 
-
-def normalize_volume(wav, target_dBFS, increase_only=False, decrease_only=False):
+def normalize_volume(wav, target_dBFS = -30, increase_only=False, decrease_only=False):
     if increase_only and decrease_only:
         raise ValueError("Both increase only and decrease only are set")
-    rms = np.sqrt(np.mean((wav * int16_max) ** 2))
-    wave_dBFS = 20 * np.log10(rms / int16_max)
+    rms = np.sqrt(np.mean((wav * INT16_MAX_VALUE) ** 2))
+    wave_dBFS = 20 * np.log10(rms / INT16_MAX_VALUE)
     dBFS_change = target_dBFS - wave_dBFS
     if dBFS_change < 0 and increase_only or dBFS_change > 0 and decrease_only:
         return wav
     return wav * (10 ** (dBFS_change / 20))
 
-# --- Auto Speech utils functions
 
-class Utterance:
-    def __init__(self, frames_fpath):
-        self.frames_fpath = frames_fpath
+def generate_test_sequence(feature, partial_n_frames, shift=None):
+    while feature.shape[0] <= partial_n_frames:
+        feature = np.repeat(feature, 2, axis=0)
+    if shift is None:
+        shift = partial_n_frames // 2
+    test_sequence = []
+    start = 0
+    while start + partial_n_frames <= feature.shape[0]:
+        test_sequence.append(feature[start: start + partial_n_frames])
+        start += shift
+    test_sequence = np.stack(test_sequence, axis=0)
+    return test_sequence
 
-    def get_frames(self):
-        return np.load(self.frames_fpath)
-
-    def random_partial(self, n_frames):
-        """
-        Crops the frames into a partial utterance of n_frames
-        
-        :param n_frames: The number of frames of the partial utterance
-        :return: the partial utterance frames and a tuple indicating the start and end of the 
-        partial utterance in the complete utterance.
-        """
-        frames = self.get_frames()
-        if frames.shape[0] == n_frames:
-            start = 0
-        else:
-            start = np.random.randint(0, frames.shape[0] - n_frames)
-        end = start + n_frames
-        return frames[start:end], (start, end)
-
-# Contains the set of utterances of a single speaker
-class Speaker:
-    def __init__(self, root: Path, partition=None):
-        self.root = root
-        self.partition = partition
-        self.name = root.name
-        self.utterances = None
-        self.utterance_cycler = None
-        if self.partition is None:
-            with self.root.joinpath("_sources.txt").open("r") as sources_file:
-                sources = [l.strip().split(",") for l in sources_file]
-        else:
-            with self.root.joinpath("_sources_{}.txt".format(self.partition)).open("r") as sources_file:
-                sources = [l.strip().split(",") for l in sources_file]
-        self.sources = [[self.root, frames_fname, self.name, wav_path]
-                        for frames_fname, wav_path in sources]
-
-    def _load_utterances(self):
-        self.utterances = [Utterance(source[0].joinpath(source[1]))
-                           for source in self.sources]
-
-    def random_partial(self, count, n_frames):
-        """
-        Samples a batch of <count> unique partial utterances from the disk in a way that all
-        utterances come up at least once every two cycles and in a random order every time.
-
-        :param count: The number of partial utterances to sample from the set of utterances from
-        that speaker. Utterances are guaranteed not to be repeated if <count> is not larger than
-        the number of utterances available.
-        :param n_frames: The number of frames in the partial utterance.
-        :return: A list of tuples (utterance, frames, range) where utterance is an Utterance,
-        frames are the frames of the partial utterances and range is the range of the partial
-        utterance with regard to the complete utterance.
-        """
-        if self.utterances is None:
-            self._load_utterances()
-
-        utterances = self.utterance_cycler.sample(count)
-
-        a = [(u,) + u.random_partial(n_frames) for u in utterances]
-
-        return a
-
-
-def compute_mean_std(dataset_dirs: list, output_path_mean: Path, output_path_std: Path):
+def compute_mean_std(dataset_dirs, output_path_mean, output_path_std):
     print("Computing mean std...")
 
     speaker_dirs = []
@@ -190,71 +89,239 @@ def compute_mean_std(dataset_dirs: list, output_path_mean: Path, output_path_std
     np.save(output_path_mean, mean)
     np.save(output_path_std, std)
 
-# --- CNN3D functions
-def get_logenergy(signal, fs, num_coefficient=40):
+def get_logenergy(signal, fs, num_coefficient=40, fft_length=1024, frame_length=0.025, frame_stride=0.01):
     # Staching frames
-    frames = speechpy.processing.stack_frames(signal, sampling_frequency=fs, frame_length=0.025,
-                                              frame_stride=0.01,
+    frames = speechpy.processing.stack_frames(signal, sampling_frequency=fs, frame_length=frame_length,
+                                              frame_stride=frame_stride,
                                               zero_padding=True)
 
     # # Extracting power spectrum (choosing 3 seconds and elimination of DC)
     power_spectrum = speechpy.processing.power_spectrum(
         frames, fft_points=2 * num_coefficient)[:, 1:]
 
-    logenergy = speechpy.feature.lmfe(signal, sampling_frequency=fs, frame_length=0.025, frame_stride=0.01,
-                                      num_filters=num_coefficient, fft_length=1024, low_frequency=0,
+    logenergy = speechpy.feature.lmfe(signal, sampling_frequency=fs, frame_length=frame_length, frame_stride=frame_stride,
+                                      num_filters=num_coefficient, fft_length=fft_length, low_frequency=0,
                                       high_frequency=None)
 
     return logenergy
 
 
-class CMVN(object):
+# https://github.com/jameslyons/python_speech_features
+def round_half_up(number):
+    return int(decimal.Decimal(number).quantize(decimal.Decimal('1'), rounding=decimal.ROUND_HALF_UP))
+
+
+def rolling_window(a, window, step=1):
+    # http://ellisvalentiner.com/post/2017-03-21-np-strides-trick
+    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    strides = a.strides + (a.strides[-1],)
+    return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)[::step]
+
+
+def framesig(sig, frame_len, frame_step, winfunc=lambda x: np.ones((x,)), stride_trick=True):
+    """Frame a signal into overlapping frames.
+
+    :param sig: the audio signal to frame.
+    :param frame_len: length of each frame measured in samples.
+    :param frame_step: number of samples after the start of the previous frame that the next frame should begin.
+    :param winfunc: the analysis window to apply to each frame. By default no window is applied.
+    :param stride_trick: use stride trick to compute the rolling window and window multiplication faster
+    :returns: an array of frames. Size is NUMFRAMES by frame_len.
     """
-    Cepstral mean variance normalization.
+    slen = len(sig)
+    frame_len = int(round_half_up(frame_len))
+    frame_step = int(round_half_up(frame_step))
+    if slen <= frame_len:
+        numframes = 1
+    else:
+        numframes = 1 + \
+            int(math.ceil((1.0 * slen - frame_len) / frame_step))  # LV
+
+    padlen = int((numframes - 1) * frame_step + frame_len)
+
+    zeros = np.zeros((padlen - slen,))
+    padsignal = np.concatenate((sig, zeros))
+    if stride_trick:
+        win = winfunc(frame_len)
+        frames = rolling_window(padsignal, window=frame_len, step=frame_step)
+    else:
+        indices = np.tile(np.arange(0, frame_len), (numframes, 1)) + np.tile(
+            np.arange(0, numframes * frame_step, frame_step), (frame_len, 1)).T
+        indices = np.array(indices, dtype=np.int32)
+        frames = padsignal[indices]
+        win = np.tile(winfunc(frame_len), (numframes, 1))
+
+    return frames * win
+
+
+def deframesig(frames, siglen, frame_len, frame_step, winfunc=lambda x: np.ones((x,))):
+    """Does overlap-add procedure to undo the action of framesig.
+
+    :param frames: the array of frames.
+    :param siglen: the length of the desired signal, use 0 if unknown. Output will be truncated to siglen samples.
+    :param frame_len: length of each frame measured in samples.
+    :param frame_step: number of samples after the start of the previous frame that the next frame should begin.
+    :param winfunc: the analysis window to apply to each frame. By default no window is applied.
+    :returns: a 1-D signal.
     """
+    frame_len = round_half_up(frame_len)
+    frame_step = round_half_up(frame_step)
+    numframes = np.shape(frames)[0]
+    assert np.shape(frames)[
+        1] == frame_len, '"frames" matrix is wrong size, 2nd dim is not equal to frame_len'
 
-    def __call__(self, feature):
-        # Mean variance normalization of the spectrum.
-        feature_norm = speechpy.processing.cmvn(
-            feature, variance_normalization=False)
+    indices = np.tile(np.arange(0, frame_len), (numframes, 1)) + np.tile(
+        np.arange(0, numframes * frame_step, frame_step), (frame_len, 1)).T
+    indices = np.array(indices, dtype=np.int32)
+    padlen = (numframes - 1) * frame_step + frame_len
 
-        return feature_norm
+    if siglen <= 0:
+        siglen = padlen
+
+    rec_signal = np.zeros((padlen,))
+    window_correction = np.zeros((padlen,))
+    win = winfunc(frame_len)
+
+    for i in range(0, numframes):
+        window_correction[indices[i, :]] = window_correction[
+            indices[i, :]] + win + 1e-15  # add a little bit so it is never zero
+        rec_signal[indices[i, :]] = rec_signal[indices[i, :]] + frames[i, :]
+
+    rec_signal = rec_signal / window_correction
+    return rec_signal[0:siglen]
 
 
-class Feature_Cube(object):
+def magspec(frames, NFFT):
+    """Compute the magnitude spectrum of each frame in frames. If frames is an NxD matrix, output will be Nx(NFFT/2+1).
+
+    :param frames: the array of frames. Each row is a frame.
+    :param NFFT: the FFT length to use. If NFFT > frame_len, the frames are zero-padded.
+    :returns: If frames is an NxD matrix, output will be Nx(NFFT/2+1). Each row will be the magnitude spectrum of the corresponding frame.
     """
-    Return a feature cube of desired size.
+    if np.shape(frames)[1] > NFFT:
+        logging.warn(
+            'frame length (%d) is greater than FFT size (%d), frame will be truncated. Increase NFFT to avoid.',
+            np.shape(frames)[1], NFFT)
+    complex_spec = np.fft.rfft(frames, NFFT)
+    return np.absolute(complex_spec)
 
-    Args:
-        cube_shape (tuple): The shape of the feature cube.
+
+def powspec(frames, NFFT):
+    """Compute the power spectrum of each frame in frames. If frames is an NxD matrix, output will be Nx(NFFT/2+1).
+
+    :param frames: the array of frames. Each row is a frame.
+    :param NFFT: the FFT length to use. If NFFT > frame_len, the frames are zero-padded.
+    :returns: If frames is an NxD matrix, output will be Nx(NFFT/2+1). Each row will be the power spectrum of the corresponding frame.
     """
-
-    def __init__(self, cube_shape):
-        assert isinstance(cube_shape, (tuple))
-        self.cube_shape = cube_shape
-        self.num_frames = cube_shape[0]
-        self.num_coefficient = cube_shape[1]
-        self.num_utterances = cube_shape[2]
-
-    def __call__(self, feature):
-        # Feature cube.
-        feature_cube = np.zeros(
-            (self.num_utterances, self.num_frames, self.num_coefficient), dtype=np.float32)
-
-        # Get some random starting point for creation of the future cube of size (num_frames x num_coefficient x num_utterances)
-        # Since we are doing random indexing, the data augmentation is done as well because in each iteration it returns another indexing!
-        idx = np.random.randint(
-            feature.shape[0] - self.num_frames, size=self.num_utterances)
-        for num, index in enumerate(idx):
-            feature_cube[num, :, :] = feature[index:index + self.num_frames, :]
-
-        return feature_cube[None, :, :, :]
+    return 1.0 / NFFT * np.square(magspec(frames, NFFT))
 
 
-class ToOutput(object):
+def logpowspec(frames, NFFT, norm=1):
+    """Compute the log power spectrum of each frame in frames. If frames is an NxD matrix, output will be Nx(NFFT/2+1).
+
+    :param frames: the array of frames. Each row is a frame.
+    :param NFFT: the FFT length to use. If NFFT > frame_len, the frames are zero-padded.
+    :param norm: If norm=1, the log power spectrum is normalised so that the max value (across all frames) is 0.
+    :returns: If frames is an NxD matrix, output will be Nx(NFFT/2+1). Each row will be the log power spectrum of the corresponding frame.
     """
-    Return the output.
-    """
+    ps = powspec(frames, NFFT)
+    ps[ps <= 1e-30] = 1e-30
+    lps = 10 * np.log10(ps)
+    if norm:
+        return lps - np.max(lps)
+    else:
+        return lps
 
-    def __call__(self, feature):
-        return feature
+
+def preemphasis(signal, coeff=0.95):
+    """perform preemphasis on the input signal.
+
+    :param signal: The signal to filter.
+    :param coeff: The preemphasis coefficient. 0 is no filter, default is 0.95.
+    :returns: the filtered signal.
+    """
+    return np.append(signal[0], signal[1:] - coeff * signal[:-1])
+
+# https://github.com/christianvazquez7/ivector/blob/master/MSRIT/rm_dc_n_dither.m
+def remove_dc_and_dither(sin, sample_rate):
+    if sample_rate == 16e3:
+        alpha = 0.99
+    elif sample_rate == 8e3:
+        alpha = 0.999
+    else:
+        print("Sample rate must be 16kHz or 8kHz only")
+        exit(1)
+    sin = lfilter([1, -1], [1, -alpha], sin)
+    dither = np.random.random_sample(
+        len(sin)) + np.random.random_sample(len(sin)) - 1
+    spow = np.std(dither)
+    sout = sin + 1e-6 * spow * dither
+    return sout
+
+
+def normalize_frames(m, epsilon=1e-12):
+    return np.array([(v - np.mean(v)) / max(np.std(v), epsilon) for v in m])
+
+
+def get_fft_spectrum(signal, buckets, sample_rate, n_fft, frame_len, frame_step, preemphasis_alpha):
+    signal *= 2**15
+
+    min_len = int(frame_step*sample_rate*list(buckets.keys())
+                  [0]+frame_len*sample_rate)
+    if signal.size < min_len:
+        signal = np.pad(signal, (0, min_len-signal.size),
+                        'constant', constant_values=0)
+
+    # get FFT spectrum
+    signal = remove_dc_and_dither(signal, sample_rate)
+    signal = preemphasis(signal, coeff=preemphasis_alpha)
+    frames = framesig(signal, frame_len=frame_len*sample_rate,
+                      frame_step=frame_step*sample_rate, winfunc=np.hamming)
+    fft = abs(np.fft.fft(frames, n=n_fft))
+    fft_norm = normalize_frames(fft.T)
+
+    # truncate to max bucket sizes
+    rsize = max(k for k in buckets if k <= fft_norm.shape[1])
+    rstart = int((fft_norm.shape[1]-rsize)/2)
+    out = fft_norm[:, rstart:rstart+rsize]
+
+    return out
+
+def build_buckets(max_sec, step_sec, frame_step):
+    buckets = {}
+    frames_per_sec = int(1/frame_step)
+    end_frame = int(max_sec*frames_per_sec)
+    step_frame = int(step_sec*frames_per_sec)
+    for i in range(0, end_frame+1, step_frame):
+        s = i
+        s = np.floor((s-7+2)/2) + 1  # conv1
+        s = np.floor((s-3)/2) + 1  # mpool1
+        s = np.floor((s-5+2)/2) + 1  # conv2
+        s = np.floor((s-3)/2) + 1  # mpool2
+        s = np.floor((s-3+2)/1) + 1  # conv3
+        s = np.floor((s-3+2)/1) + 1  # conv4
+        s = np.floor((s-3+2)/1) + 1  # conv5
+        s = np.floor((s-3)/2) + 1  # mpool5
+        s = np.floor((s-1)/1) + 1  # fc6
+        if s > 0:
+            buckets[i] = int(s)
+    return buckets
+
+
+def get_cube(feature, cube_shape):
+    num_frames = cube_shape[0]
+    num_coefficient = cube_shape[1]
+    num_utterances = cube_shape[2]
+
+    # Feature cube.
+    feature_cube = np.zeros(
+        (num_utterances, num_frames, num_coefficient), dtype=np.float32)
+
+    # Get some random starting point for creation of the future cube of size (num_frames x num_coefficient x num_utterances)
+    # Since we are doing random indexing, the data augmentation is done as well because in each iteration it returns another indexing!
+    idx = np.random.randint(
+        feature.shape[0] - num_frames, size=num_utterances)
+    for num, index in enumerate(idx):
+        feature_cube[num, :, :] = feature[index:index + num_frames, :]
+
+    return feature_cube[None, :, :, :]

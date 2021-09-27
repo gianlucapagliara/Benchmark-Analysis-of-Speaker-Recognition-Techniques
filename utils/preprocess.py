@@ -6,8 +6,6 @@ from tqdm import tqdm
 import numpy as np
 
 import utils.audio as audio
-from utils import params
-from utils.params import *
 
 
 anglophone_nationalites = ["australia", "canada", "ireland", "uk", "usa"]
@@ -58,7 +56,7 @@ class DatasetLog:
         self.text_file.close()
 
 
-def _init_preprocess_dataset(dataset_name, dataset_root, out_dir) -> (Path, DatasetLog):
+def _init_preprocess_dataset(dataset_name, dataset_root, out_dir):
     if not dataset_root.exists():
         print("Couldn\'t find %s, skipping this dataset." % dataset_root)
         return None, None

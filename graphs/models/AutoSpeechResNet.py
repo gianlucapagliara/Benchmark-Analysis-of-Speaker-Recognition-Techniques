@@ -271,6 +271,7 @@ class ResNet(AutoSpeechModel):
         return x
 
     def forward(self, x):
+        x = self.preforward(x)
         f = self.featuremaps(x)
         v = self.global_avgpool(f)
         v = v.view(v.size(0), -1)

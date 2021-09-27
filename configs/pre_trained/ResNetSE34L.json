@@ -31,24 +31,18 @@
     "weight_decay": 0,
     "last_FC_size": 512,
 
-    "train": false,
-    "train_dataset": "VoxCeleb2",
-    "train_list": "data/train_list.txt",
-    "train_path": "data/voxceleb2/",
-    "max_frames": 200,
-    "max_epoch": 500,
-    "batch_size": 200,
     "nDataLoaderThread": 1,
-    "max_seg_per_spk": 500,
-    "sampler": true,
 
     "test": true,
     "test_dataset": "VoxCeleb1",
     "test_list": "data/test_list.txt",
     "test_path": "data/voxceleb1/test/wav/",
-    "eval_frames": 400,
     "print_interval": 100,
     "test_interval": 10,
+    
+    "preprocessing_function": "voxceleb_trainer_preprocessing",
+    "max_frames": 200,
+    "eval_frames": 400,
     "num_eval": 10,
 
     "mixedprec": false,

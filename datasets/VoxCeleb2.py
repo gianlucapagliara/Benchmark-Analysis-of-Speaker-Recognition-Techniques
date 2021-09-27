@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from utils.audio import loadWAV
+from utils.audio import load_wav
 
 class VoxCeleb2(Dataset):
     def __init__(self, train_list, train_path, max_frames, max_files=0, **kwargs):
@@ -45,13 +45,15 @@ class VoxCeleb2(Dataset):
 
         if hasattr(indices, '__iter__'):
             for index in indices:
-                audio = loadWAV(self.data_list[index], self.max_frames, evalmode=False)
+                audio, sr = load_wav(self.data_list[index])
+                audio = voxceleb_trainer_preprocessing(audio, sr, self.max_frames, evalmode=False)
                 feat.append(audio)
         else:
-           index = indices
-           audio = loadWAV(self.data_list[index],
-                           self.max_frames, evalmode=False)
-           feat.append(audio)
+            index = indices
+            audio, sr = load_wav(self.data_list[index])
+            audio = voxceleb_trainer_preprocessing(
+                audio, sr, self.max_frames, evalmode=False)
+            feat.append(audio)
         
         feat = np.concatenate(feat, axis=0)
 

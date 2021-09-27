@@ -8,9 +8,6 @@ import json
 from easydict import EasyDict
 from pprint import pprint
 
-from utils.dirs import create_dirs
-
-
 def setup_logging(log_dir):
     log_file_format = "[%(levelname)s] - %(asctime)s - %(name)s - : %(message)s in %(pathname)s:%(lineno)d"
     log_console_format = "[%(levelname)s]: %(message)s"
@@ -35,7 +32,6 @@ def setup_logging(log_dir):
     main_logger.addHandler(exp_file_handler)
     main_logger.addHandler(exp_errors_file_handler)
 
-
 def get_config_from_json(json_file):
     """
     Get the config from a json file
@@ -54,7 +50,6 @@ def get_config_from_json(json_file):
             logging.getLogger().warning(
                 "INVALID JSON file format! Please provide a good json file.")
             exit(-1)
-
 
 def process_config(json_file):
     """
@@ -92,3 +87,18 @@ def process_config(json_file):
         logging.getLogger().info(config)
 
     return config
+
+def create_dirs(dirs):
+    """
+    dirs - a list of directories to create if these directories are not found
+    :param dirs:
+    :return:
+    """
+    try:
+        for dir_ in dirs:
+            if not os.path.exists(dir_):
+                os.makedirs(dir_)
+    except Exception as err:
+        logging.getLogger("Dirs Creator").info(
+            "Creating directories error: {0}".format(err))
+        exit(-1)

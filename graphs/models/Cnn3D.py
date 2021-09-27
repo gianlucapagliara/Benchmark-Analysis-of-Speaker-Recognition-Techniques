@@ -31,6 +31,8 @@ class Cnn3D(BaseModel):
         self.fc2 = nn.Linear(128, 1211)
 
     def forward(self, x):
+        x = self.preforward(x)
+
         x = F.relu(self.conv11_bn(self.conv11(x)))
         x = F.relu(self.conv12_bn(self.conv12(x)))
         x = F.relu(self.conv21_bn(self.conv21(x)))

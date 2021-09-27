@@ -15,16 +15,16 @@
     
     "nDataLoaderThread": 1,
     
-    "train": false,
-    
     "test": true,
-    "test_dataset": "MobileSinc",
+    "test_dataset": "VoxCeleb1",
     "test_list": "data/test_list.txt",
     "test_path": "data/voxceleb1/test/wav/",
     "print_interval": 100,
     "test_interval": 10,
     "eval_frames": 400,
     "num_eval": 10,
+
+    "preprocessing_function": "amplitude_preprocessing",
     
     "mixedprec": false,
     "distributed": false,
