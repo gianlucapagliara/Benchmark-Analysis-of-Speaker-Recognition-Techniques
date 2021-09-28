@@ -110,3 +110,7 @@ experiments/*
 # Data
 data/*
 !data/.keep
+
+# Notebooks
+notebooks/*
+*.ipynb
