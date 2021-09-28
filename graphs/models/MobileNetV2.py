@@ -114,7 +114,3 @@ class MobileNetV2(BaseModel):
         x = x.mean(2)
         # x = self.classifier(x)
         return x
-
-    def load_state_dict(self, state_dict):
-        state_dict = state_dict['MOBILENET_model_par']
-        super(MobileNetV2, self).load_state_dict(state_dict)

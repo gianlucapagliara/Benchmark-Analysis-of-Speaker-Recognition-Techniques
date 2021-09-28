@@ -10,7 +10,7 @@ from __future__ import division
 from torch import nn
 import torch
 import torch.utils.model_zoo as model_zoo
-from graphs.models.base import AutoSpeechModel
+from graphs.models.base import BaseModel
 
 model_urls = {
     'resnet18':
@@ -124,7 +124,7 @@ class Bottleneck(nn.Module):
         return out
 
 
-class ResNet(AutoSpeechModel):
+class ResNet(BaseModel):
     """Residual network.
 
     Reference:

@@ -22,7 +22,7 @@ model:
     
     checkpoint_dir: ""
     checkpoint_file: ""
-    initial_model: pretrained_weights/MobileNetV2.pkl
+    initial_model: pretrained_weights/MobileNetV2.pth
     summary_dir: ""
 
 test:

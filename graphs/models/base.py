@@ -53,22 +53,7 @@ class BaseModel(nn.Module):
 
         return ref_feat
 
-class AutoSpeechModel(BaseModel):
-    def load_state_dict(self, state_dict):
-        new_state_dict = {}
-        for name in state_dict.keys():
-            new_name = name.replace("module.", "")
-            new_state_dict[new_name] = state_dict[name]
-        super(AutoSpeechModel, self).load_state_dict(new_state_dict)
-
 class VoxModel(BaseModel):
-    def load_state_dict(self, state_dict):
-        new_state_dict = {}
-        for name in state_dict.keys():
-            new_name = name.replace("__S__.", "")
-            new_state_dict[new_name] = state_dict[name]
-        super(VoxModel, self).load_state_dict(new_state_dict)
-
     def preforward(self, x):
         x = x.reshape(-1, x.size()[-1]).to(self.device)
         return x

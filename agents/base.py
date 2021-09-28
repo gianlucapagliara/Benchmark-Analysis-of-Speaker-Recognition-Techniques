@@ -107,9 +107,7 @@ class NNAgent(BaseAgent):
 
     def load_parameters(self, path):
         loaded_state = torch.load(path, map_location="cuda:%d" % self.gpu)
-
-        if loaded_state.get('state_dict', "") != "":
-            loaded_state = loaded_state['state_dict']
+        loaded_state = loaded_state.state_dict()
 
         self.__model__.load_state_dict(loaded_state)
 

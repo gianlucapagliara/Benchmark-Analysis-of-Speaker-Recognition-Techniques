@@ -22,7 +22,7 @@ model:
     
     checkpoint_dir: ""
     checkpoint_file: ""
-    initial_model: pretrained_weights/vggvox.model
+    initial_model: pretrained_weights/vggvox.pth
     summary_dir: ""
 
 test:

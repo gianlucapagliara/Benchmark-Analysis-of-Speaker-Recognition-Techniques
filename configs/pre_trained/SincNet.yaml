@@ -8,7 +8,7 @@ dirs:
 settings:
     seed: 1337
     verbose: False
-    print_metrics: True
+    print_metrics: False
     
     cuda: True
     gpu_device: 0
@@ -22,7 +22,7 @@ model:
     
     checkpoint_dir: ""
     checkpoint_file: ""
-    initial_model: pretrained_weights/SincNet.pkl
+    initial_model: pretrained_weights/SincNet.pth
     summary_dir: ""
 
     fs: 16000

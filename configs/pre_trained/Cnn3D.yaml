@@ -1,5 +1,5 @@
 experiment:
-    name: Cnn3D Pretrained
+    name: CNN3D Pretrained
     agent:
 
 dirs:
@@ -22,7 +22,7 @@ model:
     
     checkpoint_dir: ""
     checkpoint_file: ""
-    initial_model: pretrained_weights/Cnn3D.pth
+    initial_model: pretrained_weights/CNN3D.pth
     summary_dir: ""
 
 test:

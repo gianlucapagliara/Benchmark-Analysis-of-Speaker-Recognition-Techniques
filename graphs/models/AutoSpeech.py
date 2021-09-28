@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from graphs.models.AutoSpeechBlocks import *
-from graphs.models.base import AutoSpeechModel
+from graphs.models.base import BaseModel
 from utils import Genotype
 
 PROPOSED_GENOTYPE = Genotype(normal=[('dil_conv_5x5', 1), ('dil_conv_3x3', 0), ('dil_conv_5x5', 0), ('sep_conv_3x3', 1), ('sep_conv_3x3', 1), ('sep_conv_3x3', 2), ('dil_conv_3x3', 2), ('max_pool_3x3', 1)], normal_concat=range(
@@ -71,7 +71,7 @@ class Cell(nn.Module):
     return torch.cat([states[i] for i in self._concat], dim=1)
 
 
-class AutoSpeech(AutoSpeechModel):
+class AutoSpeech(BaseModel):
 
   def __init__(self, device, C, num_classes, layers, genotype=PROPOSED_GENOTYPE, drop_path_prob = 0.0, **kwargs):
     super(AutoSpeech, self).__init__(device)

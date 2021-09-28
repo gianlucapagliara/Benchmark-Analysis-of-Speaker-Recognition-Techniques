@@ -8,7 +8,7 @@ dirs:
 settings:
     seed: 1337
     verbose: False
-    print_metrics: False
+    print_metrics: True
     metrics_batches: [1, 2, 4, 8, 16, 32]
     
     cuda: True
@@ -23,7 +23,7 @@ model:
     
     checkpoint_dir: ""
     checkpoint_file: ""
-    initial_model: pretrained_weights/ResNetSE34V2.model
+    initial_model: pretrained_weights/ResNetSE34V2.pth
     summary_dir: ""
 
     layers: [3, 4, 6, 3]
