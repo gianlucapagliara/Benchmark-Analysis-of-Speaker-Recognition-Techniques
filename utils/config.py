@@ -1,12 +1,12 @@
 import os
+from sys import exit
 
 import logging
 from logging import Formatter
 from logging.handlers import RotatingFileHandler
 
-import json
+import yaml
 from easydict import EasyDict
-from pprint import pprint
 
 def setup_logging(log_dir):
     log_file_format = "[%(levelname)s] - %(asctime)s - %(name)s - : %(message)s in %(pathname)s:%(lineno)d"
@@ -32,57 +32,62 @@ def setup_logging(log_dir):
     main_logger.addHandler(exp_file_handler)
     main_logger.addHandler(exp_errors_file_handler)
 
-def get_config_from_json(json_file):
+
+def get_config_from_yaml(yaml_file):
     """
-    Get the config from a json file
-    :param json_file: the path of the config file
+    Get the config from a yaml file
+    :param yaml_file: the path of the config file
     :return: config(namespace), config(dictionary)
     """
 
-    # parse the configurations from the config json file provided
-    with open(json_file, 'r') as config_file:
+    # parse the configurations from the config yaml file provided
+    with open(yaml_file, 'r') as config_file:
         try:
-            config_dict = json.load(config_file)
+            config_dict = yaml.safe_load(config_file)
             # EasyDict allows to access dict values as attributes (works recursively).
             config = EasyDict(config_dict)
             return config, config_dict
         except ValueError:
             logging.getLogger().warning(
-                "INVALID JSON file format! Please provide a good json file.")
-            exit(-1)
+                "INVALID YAML file format! Please provide a good yaml file.")
+            exit()
 
-def process_config(json_file):
+
+def process_config(yaml_file):
     """
-    Get the json file
+    Get the yaml file
     Processing it with EasyDict to be accessible as attributes
     then editing the path of the experiments folder
     creating some important directories in the experiment folder
     Then setup the logging in the whole program
     Then return the config
-    :param json_file: the path of the config file
+    :param yaml_file: the path of the config file
     :return: config object(namespace)
     """
-    config, _ = get_config_from_json(json_file)
+    config, _ = get_config_from_yaml(yaml_file)
 
+    # making sure that the experiment name is provided.
+    try:
+        logging.getLogger().info("Experiment: {}.".format(config.experiment.name))
+    except AttributeError:
+        logging.getLogger().warning("ERROR! Please provide the experiment name in yaml file.")
+        exit()
+    
     # create some important directories to be used for the experiment.
     logging.getLogger().info("Loading configuration and creating dirs.")
-    config.summary_dir = os.path.join("experiments", config.exp_name, "summaries/")
-    config.checkpoint_dir = os.path.join("experiments", config.exp_name, "checkpoints/")
-    config.out_dir = os.path.join("experiments", config.exp_name, "out/")
-    config.log_dir = os.path.join("experiments", config.exp_name, "logs/")
-    create_dirs([config.summary_dir, config.checkpoint_dir, config.out_dir, config.log_dir])
+    config.dirs.summary_dir = os.path.join(config.dirs.base_dir, config.experiment.name, "summaries/")
+    config.dirs.checkpoint_dir = os.path.join(
+        config.dirs.base_dir, config.experiment.name, "checkpoints/")
+    config.dirs.out_dir = os.path.join(
+        config.dirs.base_dir, config.experiment.name, "out/")
+    config.dirs.log_dir = os.path.join(
+        config.dirs.base_dir, config.experiment.name, "logs/")
+    create_dirs([config.dirs.summary_dir, config.dirs.checkpoint_dir, config.dirs.out_dir, config.dirs.log_dir])
 
     # setup logging in the project
-    setup_logging(config.log_dir)
-
-    # making sure that the exp_name is provided.
-    try:
-        logging.getLogger().info("Experiment: {}.".format(config.exp_name))
-    except AttributeError:
-        logging.getLogger().warning("ERROR! Please provide the exp_name in json file.")
-        exit(-1)
+    setup_logging(config.dirs.log_dir)
     
-    if(config.verbose):
+    if(config.settings.verbose):
         logging.getLogger().info(" The Configuration of the experiment: ")
         logging.getLogger().info(config)
 
@@ -101,4 +106,4 @@ def create_dirs(dirs):
     except Exception as err:
         logging.getLogger("Dirs Creator").info(
             "Creating directories error: {0}".format(err))
-        exit(-1)
+        exit()

@@ -15,20 +15,26 @@ class Tester(NNAgent):
     def __init__(self, config):
         super().__init__(config)
 
-        # Dataset
+        if(self.config.test.get('preprocessing_function', '') != ""):
+            self.config.test.preprocessing_function = importlib.import_module(
+                'datasets.preprocessing.functions').__getattribute__(self.config.test.preprocessing_function)
+        else:
+            self.config.test.preprocessing_function = None
+        
         TestDataset = importlib.import_module(
-            'datasets.' + config.test_dataset).__getattribute__(self.config.test_dataset)
-        self.test_dataset = TestDataset(**vars(self.config))
+            'datasets.' + self.config.test.dataset).__getattribute__(self.config.test.dataset)
+        self.test_dataset = TestDataset(**vars(self.config.test))
         self.loader = torch.utils.data.DataLoader(
             self.test_dataset,
             batch_size=1,
-            num_workers=config.nDataLoaderThread,
-            pin_memory=True,  # useful?
+            num_workers=self.config.test.nDataLoaderThread,
+            pin_memory=True,
             shuffle=False,
             drop_last=False,
-            # sampler=self.test_sampler
+            # sampler=self.test.sampler
         )
-        self.test_normalize = self.config.get('test_normalize', True)
+        self.test_normalize = self.config.test.get('normalize', True)
+
 
     def run(self):
         try:
@@ -72,7 +78,7 @@ class Tester(NNAgent):
             all_scores.append(score)
             all_labels.append(label)
 
-            if (current_iteration % self.config.print_interval == 0) or (current_iteration == total_iterations):
+            if (current_iteration % self.config.test.print_interval == 0) or (current_iteration == total_iterations):
                 tunedThreshold, eer, fpr, fnr = tuneThresholdfromScore(
                     all_scores, all_labels, [1, 0.1])
                 p_target = 0.05

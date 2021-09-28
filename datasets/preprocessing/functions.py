@@ -7,7 +7,8 @@ from speechpy.processing import cmvn
 from torchvision import transforms as T
 from utils.transforms import Normalize
 
-def voxceleb_trainer_preprocessing(signal, sample_rate, max_frames, evalmode=True, num_eval=10, **kwargs):
+
+def voxceleb_trainer_preprocessing(signal, sampling_rate, max_frames, evalmode=True, num_eval=10, **kwargs):
     # Maximum audio length
     max_audio = max_frames * 160 + 240
 
@@ -36,36 +37,36 @@ def voxceleb_trainer_preprocessing(signal, sample_rate, max_frames, evalmode=Tru
     return feat
 
 
-def cnn3d_preprocessing(signal, sample_rate, num_coefficient=40, **kwargs):
+def cnn3d_preprocessing(signal, sampling_rate, num_coefficient=40, **kwargs):
     signal = audio.get_logenergy(
-        signal, sample_rate, num_coefficient=num_coefficient)
+        signal, sampling_rate, num_coefficient=num_coefficient)
     signal = cmvn(signal, variance_normalization=False)
     signal = audio.get_cube(signal, (80, 40, 20))
 
     return signal
 
 
-def vggvox_preprocessing(signal, sample_rate, max_sec=10, buckets=None, bucket_step=1, n_fft=512, frame_len=0.025, frame_step=0.005, preemphasis_alpha=0.97, **kwargs):
+def vggvox_preprocessing(signal, sampling_rate, max_sec=10, buckets=None, bucket_step=1, n_fft=512, frame_len=0.025, frame_step=0.005, preemphasis_alpha=0.97, **kwargs):
     buckets = audio.build_buckets(max_sec, bucket_step,
                                   frame_step) if buckets is None else buckets
 
     signal = audio.get_fft_spectrum(
-        signal, buckets, sample_rate, n_fft, frame_len, frame_step, preemphasis_alpha)
+        signal, buckets, sampling_rate, n_fft, frame_len, frame_step, preemphasis_alpha)
 
     return signal
 
 
-def amplitude_preprocessing(signal, sample_rate, **kwargs):  # MobileNet and SincNet
+def amplitude_preprocessing(signal, sampling_rate, **kwargs):  # MobileNet and SincNet
     signal = signal/np.max(np.abs(signal))
 
     return signal
 
 
-def autospeech_preprocessing(signal, sample_rate, partial_n_frames, mean_file, std_file, n_fft=512, window_step=10, window_length=25, shift=None, **kwargs):
+def autospeech_preprocessing(signal, sampling_rate, partial_n_frames, mean_file, std_file, n_fft=512, window_step=10, window_length=25, shift=None, **kwargs):
     signal = audio.normalize_volume(signal, increase_only=True)
     
     signal = audio.wav_to_spectrogram(
-        signal, n_fft, sample_rate, window_step, window_length)
+        signal, n_fft, sampling_rate, window_step, window_length)
     if len(signal) < partial_n_frames:
         print("Too shoort")
 

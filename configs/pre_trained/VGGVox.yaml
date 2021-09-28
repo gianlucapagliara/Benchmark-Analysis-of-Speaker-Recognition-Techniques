@@ -1,0 +1,40 @@
+experiment:
+    name: VGGVox Pretrained
+    agent:
+
+dirs:
+    base_dir: experiments/
+
+settings:
+    seed: 1337
+    verbose: False
+    print_metrics: True
+    
+    cuda: True
+    gpu_device: 0
+    
+    mixedprec: False
+    distributed: False
+    async_loading: True
+
+model:
+    name: VGGVox
+    
+    checkpoint_dir: ""
+    checkpoint_file: ""
+    initial_model: pretrained_weights/vggvox.model
+    summary_dir: ""
+
+test:
+    dataset: VoxCeleb1
+    file_list: data/test_list.txt
+    base_path: data/voxceleb1/test/wav/
+    nDataLoaderThread: 1
+    print_interval: 100
+
+    preprocessing_function: vggvox_preprocessing
+    sampling_rate: 16000
+    n_fft: 512
+    frame_len: 0.025
+    frame_step: 0.005
+    preemphasis_alpha: 0.97

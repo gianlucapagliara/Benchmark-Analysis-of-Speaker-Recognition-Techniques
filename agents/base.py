@@ -2,6 +2,7 @@ import logging
 import importlib
 
 import torch
+from torch._C import device
 from torch.cuda.amp import GradScaler
 
 from tensorboardX import SummaryWriter
@@ -41,49 +42,42 @@ class NNAgent(BaseAgent):
         super().__init__(config)
         # GPU and CUDA
         # Construct the flag and make sure that cuda is available
-        self.cuda = torch.cuda.is_available() & self.config.cuda
+        self.cuda = torch.cuda.is_available() & self.config.settings.get('cuda', False)
         if self.cuda:
             self.device = torch.device("cuda")
-            torch.cuda.manual_seed_all(self.config.seed)
-            torch.cuda.set_device(self.config.gpu_device)
+            torch.cuda.manual_seed_all(self.config.settings.seed)
+            torch.cuda.set_device(self.config.settings.gpu_device)
             self.logger.info("Operation will be on ***** GPU-CUDA ***** ")
             print_cuda_statistics()
         else:
             self.device = torch.device("cpu")
-            torch.manual_seed(self.config.seed)
+            torch.manual_seed(self.config.settings.seed)
             self.logger.info("Operation will be on ***** CPU ***** ")
-        self.gpu = config.gpu_device
-        self.config.device = self.device
-        self.print_metrics = self.config.get('print_metrics', True)
+        self.gpu = config.settings.gpu_device
+        self.print_metrics = self.config.settings.get('print_metrics', True)
 
         self.loader = None
 
         self.required_memory = torch.cuda.memory_stats(self.device)['active.all.current']
         # Model
         Model = importlib.import_module(
-            'graphs.models.' + config.model).__getattribute__(config.model)
-        self.__model__ = Model(**vars(config)).to(self.device)
+            'graphs.models.' + config.model.name).__getattribute__(config.model.name)
+        self.__model__ = Model(device=self.device, **vars(config.model)).to(self.device)
         self.required_memory = torch.cuda.memory_stats(self.device)['active.all.current'] - self.required_memory
 
-        if(self.config.get('preprocessing_function', '') != ""):
-            self.config.preprocessing_function = importlib.import_module(
-                'datasets.preprocessing.functions').__getattribute__(self.config.preprocessing_function)
-        else:
-            self.config.preprocessing_function = None
-
         # Checkpoint Loading (if not found start from scratch)
-        if(self.config.get('checkpoint_file', "") != ""):
-            self.load_checkpoint(self.config.checkpoint_file)
+        if(self.config.model.get('checkpoint_file', "") != ""):
+            self.load_checkpoint(self.config.model.checkpoint_file)
 
         # Model Loading (if not found start from scratch)
-        if(self.config.get('initial_model', "") != ""):
-            self.load_parameters(self.config.initial_model)
+        if(self.config.model.get('initial_model', "") != ""):
+            self.load_parameters(self.config.model.initial_model)
 
         # Scaler
         self.scaler = GradScaler()
 
         # Tensorboard Writer
-        self.summary_writer = SummaryWriter(log_dir=self.config.summary_dir)
+        self.summary_writer = SummaryWriter(log_dir=self.config.dirs.summary_dir)
 
         # Counters initialization
         self.current_epoch = 0
@@ -91,11 +85,11 @@ class NNAgent(BaseAgent):
         self.best_valid_acc = 0
 
         # Others
-        self.verbose = config.verbose
-        self.mixedprec = config.mixedprec
+        self.verbose = config.settings.verbose
+        self.mixedprec = config.settings.mixedprec
 
     def load_checkpoint(self, filename):
-        filename = self.config.checkpoint_dir + filename
+        filename = self.config.dirs.checkpoint_dir + filename
         try:
             self.logger.info("Loading checkpoint '{}'".format(filename))
             checkpoint = torch.load(filename)
@@ -106,10 +100,10 @@ class NNAgent(BaseAgent):
             self.__optimizer__.load_state_dict(checkpoint['optimizer'])
 
             self.logger.info("Checkpoint loaded successfully from '{}' at (epoch {}) at (iteration {})\n".format(
-                self.config.checkpoint_dir, checkpoint['epoch'], checkpoint['iteration']))
+                self.config.dirs.checkpoint_dir, checkpoint['epoch'], checkpoint['iteration']))
         except OSError as e:
             self.logger.info("No checkpoint exists from '{}'. Skipping...".format(
-                self.config.checkpoint_dir))
+                self.config.dirs.checkpoint_dir))
 
     def load_parameters(self, path):
         loaded_state = torch.load(path, map_location="cuda:%d" % self.gpu)
@@ -127,15 +121,15 @@ class NNAgent(BaseAgent):
             'optimizer': self.__optimizer__.state_dict(),
         }
         # Save the state
-        torch.save(state, self.config.checkpoint_dir + file_name)
+        torch.save(state, self.config.dirs.checkpoint_dir + file_name)
         # If it is the best copy it to another file 'model_best.pth.tar'
         if is_best:
-            shutil.copyfile(self.config.checkpoint_dir + file_name,
-                            self.config.checkpoint_dir + 'model_best.pth.tar')
+            shutil.copyfile(self.config.dirs.checkpoint_dir + file_name,
+                            self.config.dirs.checkpoint_dir + 'model_best.pth.tar')
 
     def get_metrics(self):
-        batch_sizes = self.config['metrics_batches'] if self.config.get(
-            'metrics_batches', '') else [1, 2, 4, 8, 16, 32, 64]
+        batch_sizes = self.config.settings.metrics_batches if self.config.settings.get(
+            'metrics_batches', '') != "" else [1, 2, 4, 8, 16, 32, 64]
         input_size = next(iter(self.loader))[0].squeeze(0).shape
 
         self.logger.info('Computing metrics...')
@@ -176,5 +170,5 @@ class NNAgent(BaseAgent):
         self.logger.info("Finalizing the operation...")
         self.save_checkpoint()
         self.summary_writer.export_scalars_to_json(
-            "{}all_scalars.json".format(self.config.summary_dir))
+            "{}all_scalars.json".format(self.config.dirs.summary_dir))
         self.summary_writer.close()

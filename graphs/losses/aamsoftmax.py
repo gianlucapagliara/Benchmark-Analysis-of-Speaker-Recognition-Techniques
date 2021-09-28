@@ -9,10 +9,12 @@ import time, pdb, numpy, math
 from utils.metrics import accuracy
 
 class LossFunction(nn.Module):
-    def __init__(self, nOut, nClasses, margin=0.3, scale=15, easy_margin=False, **kwargs):
+    def __init__(self, device, nOut, nClasses, margin=0.3, scale=15, easy_margin=False, **kwargs):
         super(LossFunction, self).__init__()
 
         self.test_normalize = True
+
+        self.device = device
         
         self.m = margin
         self.s = scale
@@ -46,7 +48,7 @@ class LossFunction(nn.Module):
             phi = torch.where((cosine - self.th) > 0, phi, cosine - self.mm)
 
         #one_hot = torch.zeros(cosine.size(), device='cuda' if torch.cuda.is_available() else 'cpu')
-        one_hot = torch.zeros_like(cosine)
+        one_hot = torch.zeros_like(cosine).to(self.device)
         one_hot.scatter_(1, label.view(-1, 1), 1)
         output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
         output = output * self.s

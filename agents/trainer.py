@@ -6,6 +6,7 @@ import numpy as np
 import GPUtil
 
 import torch
+from torch._C import device
 import torch.nn.functional as F
 from torch.cuda.amp import autocast, GradScaler
 
@@ -27,14 +28,14 @@ class Trainer(NNAgent):
 
         # Dataset
         TrainDataset = importlib.import_module(
-            'datasets.' + config.train_dataset).__getattribute__(config.train_dataset)
-        self.train_dataset = TrainDataset(**vars(config))
+            'datasets.' + config.train.dataset).__getattribute__(config.train.dataset)
+        self.train_dataset = TrainDataset(device=self.device, **vars(config.train))
         self.sampler = Sampler(
-            self.train_dataset, **vars(config)) if self.config.sampler else None
+            self.train_dataset, **vars(config.train)) if self.config.train.sampler else None
         self.loader = torch.utils.data.DataLoader(
             self.train_dataset,
-            batch_size=config.batch_size,
-            num_workers=config.nDataLoaderThread,
+            batch_size=config.train.batch_size,
+            num_workers=config.train.nDataLoaderThread,
             pin_memory=False,
             drop_last=True,
             sampler=self.sampler,
@@ -43,21 +44,20 @@ class Trainer(NNAgent):
 
         # Loss
         LossFunction = importlib.import_module(
-            'graphs.losses.'+config.loss_function).__getattribute__('LossFunction')
-        self.__loss__ = LossFunction(**vars(config)).to(self.device)
-        self.test_normalize = self.__loss__.test_normalize
+            'graphs.losses.'+config.train.loss_function).__getattribute__('LossFunction')
+        self.__loss__ = LossFunction(**vars(config.train)).to(self.device)
 
         # Optimizer
         Optimizer = importlib.import_module(
-            'graphs.optimizers.' + config.optimizer).__getattribute__('Optimizer')
+            'graphs.optimizers.' + config.train.optimizer).__getattribute__('Optimizer')
         self.__optimizer__ = Optimizer(
-            self.__model__.parameters(), **vars(config))
+            self.__model__.parameters(), **vars(config.train))
 
         # Scheduler
         Scheduler = importlib.import_module(
-            'graphs.schedulers.'+config.scheduler).__getattribute__('Scheduler')
+            'graphs.schedulers.'+config.train.scheduler).__getattribute__('Scheduler')
         self.__scheduler__, self.lr_step = Scheduler(
-            self.__optimizer__, **vars(config))
+            self.__optimizer__, **vars(config.train))
         assert self.lr_step in ['epoch', 'iteration']
 
     def run(self):
@@ -69,9 +69,9 @@ class Trainer(NNAgent):
             self.logger.info("You have entered CTRL+C... Wait to finalize.")
 
     def train(self):
-        for epoch in range(self.current_epoch, self.config.max_epoch):
+        for epoch in range(self.current_epoch, self.config.train.max_epoch):
             self.current_epoch = epoch
-            if self.config.sampler:
+            if self.config.train.sampler:
                 self.sampler.set_epoch(epoch)
 
             loss, acc = self.train_one_epoch()
@@ -115,13 +115,13 @@ class Trainer(NNAgent):
             if self.mixedprec:
                 with autocast():
                     cur_loss, curr_top1 = self.__model__.forward_loss(
-                        x, y, self.__loss__, **vars(self.config))
+                        x, y, self.__loss__, **vars(self.config.train))
                 self.scaler.scale(cur_loss).backward()
                 self.scaler.step(self.__optimizer__)
                 self.scaler.update()
             else:
                 cur_loss, curr_top1 = self.__model__.forward_loss(
-                    x, y, self.__loss__, **vars(self.config))
+                    x, y, self.__loss__, **vars(self.config.train))
                 cur_loss.backward()
                 self.__optimizer__.step()
 

@@ -1,0 +1,46 @@
+experiment:
+    name: ResNetSE34V2 Pretrained
+    agent:
+
+dirs:
+    base_dir: experiments/
+
+settings:
+    seed: 1337
+    verbose: False
+    print_metrics: False
+    metrics_batches: [1, 2, 4, 8, 16, 32]
+    
+    cuda: True
+    gpu_device: 0
+    
+    mixedprec: False
+    distributed: False
+    async_loading: True
+
+model:
+    name: ResNetSE34V2
+    
+    checkpoint_dir: ""
+    checkpoint_file: ""
+    initial_model: pretrained_weights/ResNetSE34V2.model
+    summary_dir: ""
+
+    layers: [3, 4, 6, 3]
+    num_filters: [32, 64, 128, 256]
+    encoder_type: ASP
+    n_mels: 64
+    nOut: 512
+    log_input: True
+
+test:
+    dataset: VoxCeleb1
+    file_list: data/test_list.txt
+    base_path: data/voxceleb1/test/wav/
+    nDataLoaderThread: 1
+    print_interval: 100
+
+    preprocessing_function: voxceleb_trainer_preprocessing
+    sampling_rate: 16000
+    max_frames: 400
+    num_eval: 10
