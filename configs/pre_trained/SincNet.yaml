@@ -36,5 +36,7 @@ test:
     nDataLoaderThread: 1
     print_interval: 100
 
-    preprocessing_function: amplitude_preprocessing
+    preprocessing_function: sincnet_preprocessing
     sampling_rate: 16000
+    wlen: 200
+    wshift: 10

@@ -59,75 +59,41 @@ class SincNet(BaseModel):
         self.DNN2_arch = DNN2_ARCH
         self.DNN2_net = MLP(self.DNN2_arch)
 
-    def load_state_dict(self, state_dict):
-        if state_dict.get('CNN_model_par', '') != '':
-            self.CNN_net.load_state_dict(state_dict['CNN_model_par'])
-        if state_dict.get('DNN1_model_par', '') != '':
-            self.DNN1_net.load_state_dict(state_dict['DNN1_model_par'])
-        if state_dict.get('DNN2_model_par', '') != '':
-            self.DNN2_net.load_state_dict(state_dict['DNN2_model_par'])
-
-    def get_feat(self, ref, normalize=True):
-        ref_feat = self.get_dvect(ref).to(self.device)
-
-        return ref_feat
-
     def get_dvect(self, signal):
-        signal = signal.squeeze(0)
+        dvect = torch.zeros(
+            signal.shape[0], self.DNN1_arch['fc_lay'][-1]).float().to(self.device)
 
-        # split signals into chunks
-        beg_samp = 0
-        end_samp = self.wlen
+        # batches
+        n_pred = signal.shape[0]//self.batch_size
+        for i in range(0, n_pred):
+            dvect[self.batch_size*i:self.batch_size*(i+1)] = self.DNN1_net(self.CNN_net(
+                signal[self.batch_size*i:self.batch_size*(i+1)]))
+            torch.cuda.empty_cache()
 
-        d_vector_dim = self.DNN1_arch['fc_lay'][-1]
-
-        # when loading with torchaudio
-        N_fr = int((signal.shape[0]-self.wlen)/(self.wshift))
-
-        sig_arr = torch.zeros([self.batch_size, self.wlen]).float().to(
-            self.device).contiguous()
-        dvects = Variable(torch.zeros(
-            N_fr, d_vector_dim).float().to(self.device).contiguous())
-
-        count_fr = 0
-        count_fr_tot = 0
-        while end_samp < signal.shape[0]:
-            sig_arr[count_fr, :] = signal[beg_samp:end_samp]
-            beg_samp = beg_samp + self.wshift
-            end_samp = beg_samp + self.wlen
-            count_fr = count_fr + 1
-            count_fr_tot = count_fr_tot + 1
-            if count_fr == self.batch_size:
-                inp = Variable(sig_arr)
-                out = self.DNN1_net(self.CNN_net(inp))
-                dvects[count_fr_tot-self.batch_size:count_fr_tot, :] = out
-                count_fr = 0
-                sig_arr = torch.zeros([self.batch_size, self.wlen]).float().to(
-                    self.device).contiguous()
-
-        if count_fr > 0:
-            inp = Variable(sig_arr[:count_fr])
-            out = self.DNN1_net(self.CNN_net(inp))
-            dvects[count_fr_tot-count_fr-1:count_fr_tot, :] = out
+        # last batch
+        if(signal.shape[0] % self.batch_size > 0):
+            dvect[self.batch_size*(n_pred-1):] = self.DNN1_net(self.CNN_net(
+                signal[self.batch_size*(n_pred-1):]))
+            torch.cuda.empty_cache()
 
         # averaging and normalizing all the d-vectors
-        d_vect_out = torch.mean(
-            dvects/dvects.norm(p=2, dim=1).view(-1, 1), dim=0)
+        dvect = torch.mean(
+            dvect/dvect.norm(p=2, dim=1).view(-1, 1), dim=0)
 
-        d_vect_out = d_vect_out.unsqueeze(0)
-        return d_vect_out
+        return dvect
 
     def preforward(self, x):
-        super(SincNet, self).preforward(x)
-        if x.shape == 1:
+        x = super(SincNet, self).preforward(x)
+        if x.shape == 2:
             x = x.unsqueeze(0)
         return x
 
     def forward(self, x):
         x = self.preforward(x)
-        d_vects = []
+        
+        d_vects = torch.zeros(
+            x.shape[0], self.DNN1_arch['fc_lay'][-1]).float().to(self.device)
         for i in range(0, x.shape[0]):
-            signal = x[i, :]
-            d_vects.append(self.get_dvect(signal))
+            d_vects[i, :] = self.get_dvect(x[i, :])
+        
         return d_vects
-

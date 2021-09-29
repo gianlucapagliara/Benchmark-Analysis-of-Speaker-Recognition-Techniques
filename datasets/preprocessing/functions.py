@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import torch
 
 import utils.audio as audio
 from speechpy.processing import cmvn
@@ -58,6 +59,16 @@ def vggvox_preprocessing(signal, sampling_rate, max_sec=10, buckets=None, bucket
 
 def amplitude_preprocessing(signal, sampling_rate, **kwargs):  # MobileNet and SincNet
     signal = signal/np.max(np.abs(signal))
+
+    return signal
+
+
+def sincnet_preprocessing(signal, sampling_rate, wlen, wshift, **kwargs):
+    wlen = int(sampling_rate*wlen/1000.00)
+    wshift = int(sampling_rate*wshift/1000.00)
+
+    signal = signal/np.max(np.abs(signal))
+    signal = torch.FloatTensor(audio.framesig(signal, wlen, wshift))
 
     return signal
 
