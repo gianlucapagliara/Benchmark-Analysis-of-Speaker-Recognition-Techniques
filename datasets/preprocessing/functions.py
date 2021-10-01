@@ -38,11 +38,12 @@ def voxceleb_trainer_preprocessing(signal, sampling_rate, max_frames, evalmode=T
     return feat
 
 
-def cnn3d_preprocessing(signal, sampling_rate, num_coefficient=40, **kwargs):
+def cnn3d_preprocessing(signal, sampling_rate, num_coefficient=40, C=20, **kwargs):
     signal = audio.get_logenergy(
         signal, sampling_rate, num_coefficient=num_coefficient)
     signal = cmvn(signal, variance_normalization=False)
     signal = audio.get_cube(signal, (80, 40, 20))
+    signal = signal.unsqueeze(0)
 
     return signal
 
@@ -63,12 +64,15 @@ def amplitude_preprocessing(signal, sampling_rate, **kwargs):  # MobileNet and S
     return signal
 
 
-def sincnet_preprocessing(signal, sampling_rate, wlen, wshift, **kwargs):
+def sincnet_preprocessing(signal, sampling_rate, wlen, wshift, max_frames=400, **kwargs):
     wlen = int(sampling_rate*wlen/1000.00)
     wshift = int(sampling_rate*wshift/1000.00)
 
     signal = signal/np.max(np.abs(signal))
     signal = torch.FloatTensor(audio.framesig(signal, wlen, wshift))
+
+    if(signal.shape[0] > max_frames):
+        signal = signal[:400]
 
     return signal
 

@@ -86,8 +86,15 @@ class VGGVox(BaseModel):
         self.fc8 = nn.Conv2d(in_channels=1024, out_channels=nOut,
                              kernel_size=(1, 1), stride=(1, 1), padding='valid')
 
+    def preforward(self, x):
+        x = super().preforward(x)
+        if len(x.shape) == 3:
+            x = x.unsqueeze(1)
+
+        return x
+
     def forward(self, x):
-        x = x.reshape(1, *x.shape).to(self.device)
+        x = self.preforward(x)
         
         x = self.conv1(x)
         x = self.conv2(x)

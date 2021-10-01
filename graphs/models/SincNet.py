@@ -68,13 +68,11 @@ class SincNet(BaseModel):
         for i in range(0, n_pred):
             dvect[self.batch_size*i:self.batch_size*(i+1)] = self.DNN1_net(self.CNN_net(
                 signal[self.batch_size*i:self.batch_size*(i+1)]))
-            torch.cuda.empty_cache()
 
         # last batch
         if(signal.shape[0] % self.batch_size > 0):
             dvect[self.batch_size*(n_pred-1):] = self.DNN1_net(self.CNN_net(
                 signal[self.batch_size*(n_pred-1):]))
-            torch.cuda.empty_cache()
 
         # averaging and normalizing all the d-vectors
         dvect = torch.mean(
@@ -84,7 +82,7 @@ class SincNet(BaseModel):
 
     def preforward(self, x):
         x = super(SincNet, self).preforward(x)
-        if x.shape == 2:
+        if len(x.shape) == 2:
             x = x.unsqueeze(0)
         return x
 

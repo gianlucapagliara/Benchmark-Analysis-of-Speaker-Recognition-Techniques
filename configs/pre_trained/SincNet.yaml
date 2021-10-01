@@ -8,7 +8,7 @@ dirs:
 settings:
     seed: 1337
     verbose: False
-    print_metrics: False
+    print_metrics: True
     
     cuda: True
     gpu_device: 0
@@ -28,6 +28,7 @@ model:
     fs: 16000
     cw_len: 200
     cw_shift: 10
+    batch_size: 400
 
 test:
     dataset: VoxCeleb1

@@ -9,6 +9,7 @@ settings:
     seed: 1337
     verbose: False
     print_metrics: True
+    metrics_batches: [1, 2, 4, 8, 16, 32]
     
     cuda: True
     gpu_device: 0
