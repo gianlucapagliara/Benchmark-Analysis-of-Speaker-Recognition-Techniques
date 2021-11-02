@@ -1,6 +1,6 @@
 experiment:
     name: CNN3D Pretrained
-    agent:
+    agent: Tester
 
 dirs:
     base_dir: experiments/

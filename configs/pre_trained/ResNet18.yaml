@@ -1,6 +1,6 @@
 experiment:
     name: ResNet18 Pretrained
-    agent:
+    agent: Tester
 
 dirs:
     base_dir: experiments/

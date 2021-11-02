@@ -1,6 +1,6 @@
 experiment:
     name: SincNet Pretrained (VoxCeleb2)
-    agent:
+    agent: Tester
 
 dirs:
     base_dir: experiments/

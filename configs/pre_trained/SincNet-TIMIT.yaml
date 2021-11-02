@@ -1,6 +1,6 @@
 experiment:
     name: SincNet Pretrained (TIMIT)
-    agent:
+    agent: Tester
 
 dirs:
     base_dir: experiments/

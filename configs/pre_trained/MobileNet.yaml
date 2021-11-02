@@ -1,6 +1,6 @@
 experiment:
     name: MobileNet Pretrained
-    agent:
+    agent: Tester
 
 dirs:
     base_dir: experiments/

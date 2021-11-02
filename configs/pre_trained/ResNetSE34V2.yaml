@@ -1,6 +1,6 @@
 experiment:
     name: ResNetSE34V2 Pretrained
-    agent:
+    agent: Tester
 
 dirs:
     base_dir: experiments/
