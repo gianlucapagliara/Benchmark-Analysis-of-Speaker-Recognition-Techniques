@@ -43,8 +43,6 @@ class VoxCeleb1(Dataset):
         if self.preprocessing_function is not None:
             signal = self.preprocessing_function(signal, sr, **self.kwargs)
 
-        signal = torch.FloatTensor(signal)
-
         return (signal, sr)
 
     def __getitem__(self, index):

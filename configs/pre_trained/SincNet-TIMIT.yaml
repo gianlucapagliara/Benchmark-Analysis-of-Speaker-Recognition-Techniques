@@ -1,5 +1,5 @@
 experiment:
-    name: SincNet Pretrained
+    name: SincNet Pretrained (TIMIT)
     agent:
 
 dirs:

@@ -2,6 +2,7 @@ import numpy as np
 import random
 import torch
 
+
 import utils.audio as audio
 from speechpy.processing import cmvn
 
@@ -43,7 +44,7 @@ def cnn3d_preprocessing(signal, sampling_rate, num_coefficient=40, C=20, **kwarg
         signal, sampling_rate, num_coefficient=num_coefficient)
     signal = cmvn(signal, variance_normalization=False)
     signal = audio.get_cube(signal, (80, 40, 20))
-    signal = signal.unsqueeze(0)
+    signal = torch.FloatTensor(signal)
 
     return signal
 
@@ -58,7 +59,7 @@ def vggvox_preprocessing(signal, sampling_rate, max_sec=10, buckets=None, bucket
     return signal
 
 
-def amplitude_preprocessing(signal, sampling_rate, **kwargs):  # MobileNet and SincNet
+def amplitude_preprocessing(signal, sampling_rate, **kwargs):  # MobileNet
     signal = signal/np.max(np.abs(signal))
 
     return signal
@@ -94,4 +95,10 @@ def autospeech_preprocessing(signal, sampling_rate, partial_n_frames, mean_file,
     ])
     signal = transform(signal)
 
+    return signal
+
+
+def pyannote_preprocessing(signal, sampling_rate, **kwargs):
+    signal = np.expand_dims(signal, axis=1)
+    
     return signal

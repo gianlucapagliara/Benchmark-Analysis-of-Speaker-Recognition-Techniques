@@ -1,0 +1,36 @@
+experiment:
+    name: SincNet Pretrained (VoxCeleb2)
+    agent:
+
+dirs:
+    base_dir: experiments/
+
+settings:
+    seed: 1337
+    verbose: False
+    print_metrics: False
+    
+    cuda: True
+    gpu_device: 0
+    
+    mixedprec: False
+    distributed: False
+    async_loading: True
+
+model:
+    name: SincNetPyAnnote
+
+    checkpoint_dir: ""
+    checkpoint_file: ""
+    initial_model: ""
+    summary_dir: ""
+    weights: "emb_voxceleb"
+
+test:
+    dataset: VoxCeleb1
+    file_list: data/test_list.txt
+    base_path: data/voxceleb1/test/wav/
+    nDataLoaderThread: 1
+    print_interval: 100
+
+    preprocessing_function: pyannote_preprocessing
